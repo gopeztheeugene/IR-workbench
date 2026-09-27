@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>IR Workbench</title>
+  <!-- Load the look (CSS) -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- LEFT SIDE: the sidebar with the list of cases. -->
+  <aside class="sidebar">
+    <h1>IR Workbench</h1>
+    <p class="muted">Not saved to disk yet (in memory only)</p>
+
+    <button id="new-case-btn" class="btn btn-primary">+ New case</button>
+
+    <!-- Testing helper: adds fake cases (core/sample.js). -->
+    <button id="sample-data-btn" class="btn">Load sample data</button>
+
+    <!-- THE time zone for the whole app: every time you see AND every
+         time you type is in this zone (saved as UTC behind the scenes).
+         Remembered by the browser (localStorage). core/sidebar.js. -->
+    <label class="sidebar-setting">Time zone (all tabs)
+      <select id="display-zone"></select>
+      <span class="sidebar-hint">Times you see and enter use this zone.</span>
+    </label>
+
+    <!-- Empty box. core/sidebar.js fills it with one row per case. -->
+    <div id="case-list"></div>
+  </aside>
+
+  <!-- NEW CASE POP-UP. A <dialog> is hidden until JavaScript opens it
+       with showModal(). "Modal" means it dims the page behind it and
+       you can't click the page until it's closed (Esc also closes it). -->
+  <dialog id="new-case-dialog">
+    <form id="new-case-form">
+      <h2>New case</h2>
+
+      <!-- Each input's "name" is the key we read in JavaScript,
+           like the keys of a Python dict. -->
+      <label>Ticket ID *
+        <!-- "required": the browser won't submit the form if empty -->
+        <input name="id" required placeholder="INC-2041">
+      </label>
+
+      <label>Title
+        <input name="title" placeholder="Acme ransomware">
+      </label>
+
+      <label>Client
+        <input name="client" placeholder="Acme Corp">
+      </label>
+
+      <!-- Three fields side by side -->
+      <div class="form-row">
+        <label>Severity
+          <!-- Options are filled in by JavaScript from App.SEVERITIES -->
+          <select name="severity" id="new-case-severity"></select>
+        </label>
+        <label>Status
+          <select name="status" id="new-case-status"></select>
+        </label>
+        <label>Opened
+          <!-- type="date" gives a date picker -->
+          <input name="opened" type="date" id="new-case-opened">
+        </label>
+      </div>
+
+      <fieldset>
+        <legend>Case type (pick any that apply)</legend>
+        <!-- Checkboxes are filled in by JavaScript from App.CASE_TYPES -->
+        <div id="new-case-types" class="type-grid"></div>
+      </fieldset>
+
+      <!-- Error message goes here, e.g. "already exists" -->
+      <p id="new-case-error" class="error"></p>
+
+      <div class="form-buttons">
+        <!-- type="button" means clicking it does NOT submit the form -->
+        <button type="button" id="new-case-cancel" class="btn">Cancel</button>
+        <!-- type="submit" triggers the form's "submit" event -->
+        <button type="submit" class="btn btn-primary">Create case</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ADD EVIDENCE POP-UP. Used by tabs/evidence.js. -->
+  <dialog id="evidence-dialog">
+    <form id="evidence-form">
+      <!-- Title and hint change between "Add" and "Edit" (tabs/evidence.js) -->
+      <h2 id="evidence-dialog-title">Add evidence</h2>
+      <p class="muted small" id="evidence-dialog-hint">The ID (EV-001, EV-002, ...) is assigned automatically.</p>
+
+      <label>Type
+        <!-- Filled in by JavaScript from App.EVIDENCE_TYPES -->
+        <select name="type" id="evidence-type"></select>
+      </label>
+
+      <label>Collected at <span class="zone-hint" data-zone-hint></span>
+        <!-- type="datetime-local" gives a date AND time picker;
+             step="1" allows seconds. The time is in the sidebar's zone
+             (filled into data-zone-hint above) and saved as UTC. -->
+        <input name="collectedAt" type="datetime-local" step="1" id="evidence-collected">
+      </label>
+      <!-- "Saved as 2026-09-20 11:40:00 UTC" -->
+      <p id="evidence-time-preview" class="muted small"></p>
+
+      <div class="form-row form-row-2">
+        <label>Source
+          <input name="source" placeholder="Windows Security log, Velociraptor, M365 UAL">
+        </label>
+        <label>Host / account
+          <!-- data-asset-picker: pick list of the case's assets
+               (core/pickers.js does the rest) -->
+          <input name="host" data-asset-picker placeholder="Pick from Assets or type">
+        </label>
+      </div>
+
+      <!-- Ticked: the host/account above is added to the Assets tab
+           (or linked, if it's already there). Leave unticked for hosts
+           that are only a log source, like a firewall. -->
+      <label class="type-option">
+        <input type="checkbox" name="affected" id="evidence-affected">
+        Add host / account to Assets as affected
+      </label>
+
+      <fieldset>
+        <legend>Location</legend>
+        <!-- Radio buttons: only one of a group (same name) can be chosen -->
+        <div class="radio-row">
+          <label class="type-option">
+            <input type="radio" name="kind" value="link" checked> Cloud link
+          </label>
+          <label class="type-option">
+            <input type="radio" name="kind" value="file"> Local file
+          </label>
+        </div>
+
+        <!-- Only one of these two is shown, depending on the radio choice.
+             "hidden" hides an element; JavaScript turns it on and off. -->
+        <label id="evidence-link-field">Link
+          <input name="link" placeholder="https://...">
+        </label>
+        <label id="evidence-file-field" hidden>File
+          <!-- type="file" opens the file picker. The file is NOT copied
+               or uploaded; we only read it to calculate its hash. -->
+          <input type="file" id="evidence-file">
+          <!-- When editing: "Current file: x.eml (kept unless you pick a new one)" -->
+          <span id="evidence-current-file" class="small"></span>
+        </label>
+      </fieldset>
+
+      <label>SHA-256
+        <input name="hash" id="evidence-hash"
+               placeholder="Calculated for local files, or paste one from your tool">
+      </label>
+      <!-- Shows "Hashing...", "too large", etc. -->
+      <p id="evidence-hash-status" class="muted small"></p>
+
+      <label>Notes
+        <textarea name="notes" rows="3" placeholder="What this shows and why it matters"></textarea>
+      </label>
+
+      <label>Raw event / log excerpt
+        <!-- spellcheck="false" stops red squiggles under log text -->
+        <textarea name="rawLog" rows="6" class="mono" spellcheck="false"
+                  placeholder="Paste the exact log line(s) that prove the point"></textarea>
+      </label>
+
+      <p id="evidence-error" class="error"></p>
+
+      <div class="form-buttons">
+        <button type="button" id="evidence-cancel" class="btn">Cancel</button>
+        <button type="submit" id="evidence-submit" class="btn btn-primary">Add evidence</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ADD / EDIT STORYLINE ENTRY POP-UP. Used by tabs/storyline.js. -->
+  <dialog id="story-dialog">
+    <form id="story-form">
+      <h2 id="story-dialog-title">Add storyline entry</h2>
+      <p class="muted small" id="story-dialog-hint"></p>
+
+      <!-- Only shown when promoting evidence: the evidence's notes and
+           raw log, so you can read the real event time from it. -->
+      <div id="story-reference" class="reference-box" hidden></div>
+
+      <label>Paste a timestamp from a log (optional)
+        <!-- Read by App.time.parseAny: ISO with Z/offset, epoch, FILETIME... -->
+        <input id="story-paste-time" class="mono" spellcheck="false"
+               placeholder="2026-09-23T07:12:44Z · 1758325267 · 2026-09-19 22:41:07 +08:00">
+      </label>
+      <p id="story-paste-status" class="muted small"></p>
+
+      <label>Timestamp <span class="zone-hint" data-zone-hint></span>
+        <!-- step="1" lets you enter seconds too. In the sidebar's zone,
+             saved as UTC. -->
+        <input name="timestamp" type="datetime-local" step="1" id="story-timestamp">
+      </label>
+      <!-- "Saved as 2026-09-19 22:41:07 UTC" -->
+      <p id="story-time-preview" class="muted small"></p>
+
+      <label>Host / user
+        <!-- data-asset-picker: pick list of the case's assets (core/pickers.js) -->
+        <input name="host" data-asset-picker placeholder="Pick from Assets or type">
+      </label>
+
+      <label>What happened *
+        <textarea name="what" rows="3" required
+                  placeholder="RDP logon as svc_backup from 203.0.113.45"></textarea>
+      </label>
+
+      <div class="form-row form-row-2">
+        <label>MITRE ATT&amp;CK tactic
+          <!-- Filled in from App.MITRE_TACTICS -->
+          <select name="tactic" id="story-tactic"></select>
+        </label>
+        <label>Confidence
+          <!-- Filled in from App.CONFIDENCE_LEVELS -->
+          <select name="confidence" id="story-confidence"></select>
+        </label>
+      </div>
+
+      <label>Technique IDs
+        <input name="techniques" class="mono" spellcheck="false"
+               placeholder="T1566.001, T1204.002">
+      </label>
+
+      <fieldset>
+        <legend>Linked evidence</legend>
+        <!-- One checkbox per evidence item in the case, built when the
+             pop-up opens (tabs/storyline.js) -->
+        <div id="story-evidence" class="type-grid"></div>
+      </fieldset>
+
+      <p id="story-error" class="error"></p>
+
+      <div class="form-buttons">
+        <button type="button" id="story-cancel" class="btn">Cancel</button>
+        <button type="submit" id="story-submit" class="btn btn-primary">Add entry</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ADD / EDIT IOC POP-UP. Used by tabs/iocs.js. -->
+  <dialog id="ioc-dialog">
+    <form id="ioc-form">
+      <h2 id="ioc-dialog-title">Add IOC</h2>
+      <p class="muted small" id="ioc-dialog-hint"></p>
+
+      <label>Value *
+        <!-- Defanged values (evil[.]com, hxxps://) are fine: they're
+             saved as the real value. -->
+        <input name="value" required class="mono" spellcheck="false" id="ioc-value"
+               placeholder="203.0.113.45 · evil[.]example · 8aedd457... · HKLM\...">
+      </label>
+
+      <div class="form-row form-row-2">
+        <label>Type
+          <!-- Filled in from App.IOC_TYPES, with "Auto-detect" first -->
+          <select name="type" id="ioc-type"></select>
+        </label>
+        <label>TLP (who it may be shared with)
+          <select name="tlp" id="ioc-tlp"></select>
+        </label>
+      </div>
+      <!-- "Detected: Domain" -->
+      <p id="ioc-detected" class="muted small"></p>
+
+      <label>First seen <span class="zone-hint" data-zone-hint></span>
+        <!-- In the sidebar's zone, saved as UTC. -->
+        <input name="firstSeen" type="datetime-local" step="1" id="ioc-first-seen">
+      </label>
+      <p id="ioc-time-preview" class="muted small"></p>
+
+      <fieldset>
+        <legend>Linked evidence</legend>
+        <!-- One checkbox per evidence item, built when the pop-up opens -->
+        <div id="ioc-evidence" class="type-grid"></div>
+      </fieldset>
+
+      <label>Notes
+        <textarea name="notes" rows="2" placeholder="Where it was seen, what it is (C2, phishing sender...)"></textarea>
+      </label>
+
+      <p id="ioc-error" class="error"></p>
+
+      <div class="form-buttons">
+        <button type="button" id="ioc-cancel" class="btn">Cancel</button>
+        <button type="submit" id="ioc-submit" class="btn btn-primary">Add IOC</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- EXTRACT IOCs FROM RAW LOGS POP-UP. Used by tabs/iocs.js. -->
+  <dialog id="extract-dialog" class="dialog-wide">
+    <form id="extract-form">
+      <h2>Extract IOCs from raw logs</h2>
+      <p class="muted small" id="extract-summary"></p>
+
+      <label>TLP for the IOCs you add
+        <select name="tlp" id="extract-tlp"></select>
+      </label>
+
+      <div class="extract-tools">
+        <button type="button" class="btn btn-small" id="extract-all">Select all</button>
+        <button type="button" class="btn btn-small" id="extract-none">Select none</button>
+        <span class="muted small">Hover over a value to see the log line it came from.</span>
+      </div>
+
+      <!-- The checklist, built by tabs/iocs.js -->
+      <div id="extract-list" class="extract-list"></div>
+
+      <p id="extract-error" class="error"></p>
+
+      <div class="form-buttons">
+        <button type="button" id="extract-cancel" class="btn">Cancel</button>
+        <button type="submit" id="extract-submit" class="btn btn-primary">Add selected</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- CHECK THE RMM CSV FOR "EDR: not installed". Used by tabs/client.js. -->
+  <!-- Hidden file picker; the RMM card's "Check RMM CSV" button clicks it.
+       The file is only read in the browser, never uploaded or copied. -->
+  <input type="file" id="device-file-input" accept=".csv,.txt,text/csv" hidden>
+
+  <dialog id="device-dialog">
+    <form id="device-form">
+      <h2>Check RMM export for missing EDR</h2>
+      <p class="muted small" id="device-dialog-summary"></p>
+
+      <div class="form-row form-row-2">
+        <label>Device name column
+          <!-- Filled in with the CSV's header row; best guess pre-selected -->
+          <select name="hostColumn" id="device-host-column"></select>
+        </label>
+        <label>EDR column
+          <!-- The column named "EDR" is pre-selected -->
+          <select name="edrColumn" id="device-edr-column"></select>
+        </label>
+      </div>
+
+      <p class="muted small" id="device-preview-title"></p>
+      <pre id="device-preview" class="device-preview"></pre>
+
+      <p id="device-error" class="error"></p>
+
+      <div class="form-buttons">
+        <button type="button" id="device-cancel" class="btn">Cancel</button>
+        <button type="submit" id="device-submit" class="btn btn-primary">Save result</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ADD / EDIT ASSET POP-UP. Used by tabs/assets.js. -->
+  <dialog id="asset-dialog">
+    <form id="asset-form">
+      <h2 id="asset-dialog-title">Add asset</h2>
+      <p class="muted small" id="asset-dialog-hint"></p>
+
+      <label>Name *
+        <input name="name" required placeholder="ACME-WS114 or j.doe@acme.com">
+      </label>
+
+      <div class="form-row form-row-2">
+        <label>Type
+          <!-- Filled in from App.ASSET_TYPES -->
+          <select name="type" id="asset-type"></select>
+        </label>
+        <label>Status
+          <!-- Filled in from App.ASSET_STATUSES -->
+          <select name="status" id="asset-status"></select>
+        </label>
+      </div>
+
+      <label>Notes
+        <textarea name="notes" rows="3" placeholder="How it was affected, what was done"></textarea>
+      </label>
+
+      <p id="asset-error" class="error"></p>
+
+      <div class="form-buttons">
+        <button type="button" id="asset-cancel" class="btn">Cancel</button>
+        <button type="submit" id="asset-submit" class="btn btn-primary">Add asset</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- RIGHT SIDE: the main area with tabs -->
+  <main class="main">
+
+    <!-- Summary of the selected case. Empty and hidden when no case
+         is selected. core/app.js fills it in. -->
+    <header id="case-header"></header>
+
+    <!-- The row of tab buttons.
+         data-tab="..." is the tab's internal KEY. JavaScript reads it
+         to know which panel each button should show.
+         The text between the tags is the LABEL you see; change it any time. -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="client">Client</button>
+      <button class="tab" data-tab="summary">Summary and Reports</button>
+      <button class="tab" data-tab="storyline">Storyline</button>
+      <button class="tab" data-tab="tasks">Tasks</button>
+      <button class="tab" data-tab="evidence">Evidence</button>
+      <button class="tab" data-tab="iocs">IOCs</button>
+      <button class="tab" data-tab="assets">Assets</button>
+      <button class="tab" data-tab="post">Post-incident</button>
+    </nav>
+
+    <!-- One panel per tab. Only one is visible at a time.
+         Each panel's id matches a button's data-tab value.
+         They start empty: each tab's file in tabs/ draws the content. -->
+    <section class="panel active" id="client"></section>
+    <section class="panel" id="summary"></section>
+    <section class="panel" id="storyline"></section>
+    <section class="panel" id="tasks"></section>
+    <section class="panel" id="evidence"></section>
+    <section class="panel" id="iocs"></section>
+    <section class="panel" id="assets"></section>
+    <section class="panel" id="post"></section>
+
+  </main>
+
+  <!-- Load the behavior (JavaScript) last, after the page exists.
+       ORDER MATTERS, like in Python where a name must be defined
+       before you use it:
+         1. state.js creates the global App object
+         2. sidebar.js and each tab file add themselves to App
+         3. app.js starts everything, so it goes last -->
+  <script src="core/state.js"></script>
+  <script src="core/time.js"></script>
+  <script src="core/ioc.js"></script>
+  <script src="core/export.js"></script>
+  <script src="core/pickers.js"></script>
+  <script src="core/sidebar.js"></script>
+  <script src="tabs/client.js"></script>
+  <script src="tabs/summary.js"></script>
+  <script src="tabs/storyline.js"></script>
+  <script src="tabs/tasks.js"></script>
+  <script src="tabs/evidence.js"></script>
+  <script src="tabs/iocs.js"></script>
+  <script src="tabs/assets.js"></script>
+  <script src="tabs/post.js"></script>
+  <script src="core/sample.js"></script>
+  <script src="core/app.js"></script>
+</body>
+</html>

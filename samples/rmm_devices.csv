@@ -1,0 +1,7 @@
+"Machine ID","Group","EDR","Last Checkin","OS"
+"acme-dc01.hq.acme","acme.hq","Installed","2026-09-20 11:00","Windows Server 2019"
+"acme-fs01.hq.acme","acme.hq","Not Installed","2026-09-20 10:58","Windows Server 2016"
+"acme-ws101.hq.acme","acme.hq","Installed","2026-09-20 10:50","Windows 11"
+"acme-ws102.hq.acme","acme.hq","Installed","2026-09-20 10:40","Windows 11"
+"acme-ws114.hq.acme","acme.hq","Installed","2026-09-18 14:22","Windows 10"
+"acme-ws130.branch.acme","acme.branch","Not installed","2026-09-17 09:12","Windows 10"

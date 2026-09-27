@@ -1,0 +1,25 @@
+# Personal instructions for Claude Code, kept local
+CLAUDE.md
+.claude/
+
+# REAL CASE DATA must never be pushed. Cases live outside this project,
+# but just in case a case folder or export ends up in here:
+IR-Cases/
+exports/
+*.evtx
+*.pcap
+*.pcapng
+*.dmp
+*.raw
+*.eml
+*.msg
+
+# Only the fake sample CSVs in samples/ may be committed
+*.csv
+!samples/*.csv
+
+# Editor and OS clutter
+.vscode/
+Thumbs.db
+desktop.ini
+.DS_Store

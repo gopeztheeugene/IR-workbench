@@ -1,0 +1,6 @@
+Endpoint Name,Agent Version,OS,Last Active,Site
+ACME-DC01,23.4.2,Windows Server 2019,2026-09-20 11:02,Acme HQ
+ACME-WS101,23.4.2,Windows 11,2026-09-20 10:55,Acme HQ
+ACME-WS102,23.4.2,Windows 11,2026-09-20 10:41,Acme HQ
+ACME-WS114,23.4.2,Windows 10,2026-09-18 14:20,Acme HQ
+ACME-WS120,23.3.1,Windows 10,2026-09-19 17:03,Acme Branch

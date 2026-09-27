@@ -1,0 +1,1049 @@
+/* Colors live in one place so they're easy to change later.
+   Think of these like constants at the top of a Python file. */
+:root {
+  --bg: #0f151b;      /* page background */
+  --panel: #18212a;   /* sidebar and panels */
+  --ink: #e3e9ef;     /* main text */
+  --muted: #8e9cab;   /* secondary text */
+  --line: #2b3843;    /* borders */
+  --accent: #5b97c6;  /* active tab underline, selected case */
+  --hover: #212c36;   /* background when the mouse is over a row */
+
+  /* Severity tag colors */
+  --sev-low: #6fa37a;
+  --sev-medium: #c9a44c;
+  --sev-high: #d9824a;
+  --sev-critical: #d65c5c;
+
+  /* Status tag colors */
+  --status-open: #5b97c6;
+  --status-contained: #b98fd6;
+  --status-closed: #8e9cab;
+  color-scheme: dark; /* makes scrollbars and form fields dark too */
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, Arial, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  /* Two columns: a 240px sidebar, and the main area takes the rest */
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  padding: 16px;
+}
+
+.sidebar h1 {
+  font-size: 18px;
+  margin: 0 0 12px;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.main {
+  padding: 16px 24px;
+  /* A grid column won't shrink below its widest content unless told
+     it may. Without this, a wide table pushes the whole page sideways
+     instead of scrolling inside its own box (.table-wrap). */
+  min-width: 0;
+}
+
+/* The row of tab buttons */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;          /* 8 tabs: wrap to a 2nd row on narrow windows */
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+}
+
+.tab {
+  border: none;
+  background: none;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+}
+
+.tab:hover {
+  color: var(--ink);
+}
+
+/* The tab that's currently selected */
+.tab.active {
+  color: var(--ink);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+
+/* Panels are hidden by default... */
+.panel {
+  display: none;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+/* ...and only the one marked "active" is shown */
+.panel.active {
+  display: block;
+}
+
+.panel h2 {
+  margin-top: 0;
+  font-size: 20px;
+}
+
+/* ---------- Sidebar case list ---------- */
+
+/* Each case is a button, so it's clickable and works with the keyboard.
+   We strip the default button look and style it as a row. */
+.case-row {
+  display: flex;
+  flex-direction: column;   /* stack the lines vertically */
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  border-left: 3px solid transparent;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  color: var(--ink);
+  font: inherit;            /* use the page font, not the button default */
+  cursor: pointer;
+}
+
+.case-row:hover {
+  background: var(--hover);
+}
+
+/* The open case: highlighted with the accent color */
+.case-row.selected {
+  background: var(--hover);
+  border-color: var(--line);
+  border-left-color: var(--accent);
+}
+
+/* First line: ticket ID on the left, severity tag on the right */
+.case-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.case-id {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.case-title {
+  font-size: 13px;
+}
+
+.case-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Small pill-shaped label, e.g. "high" */
+.tag {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;     /* big number = fully rounded ends */
+  border: 1px solid currentColor;   /* border matches the text color */
+  white-space: nowrap;      /* never split a tag like "AS-003" over 2 lines */
+}
+
+/* One color per severity. The class name is built in sidebar.js
+   as "sev-" + severity, e.g. "sev-high". */
+.sev-low      { color: var(--sev-low); }
+.sev-medium   { color: var(--sev-medium); }
+.sev-high     { color: var(--sev-high); }
+.sev-critical { color: var(--sev-critical); }
+
+/* ---------- Buttons ---------- */
+
+.btn {
+  background: var(--hover);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  border-color: var(--muted);
+}
+
+/* The main action on screen, e.g. "Create case" */
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b1117;           /* dark text on the blue button */
+  font-weight: 600;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.1);  /* slightly lighter on hover */
+}
+
+/* "+ New case" stretches across the sidebar */
+#new-case-btn {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+/* ---------- New case pop-up ---------- */
+
+dialog {
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px 24px;
+  width: min(640px, 90vw);  /* 640px wide, or 90% of the window if smaller */
+}
+
+/* The dimmed layer behind an open pop-up */
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+dialog h2 {
+  margin-top: 0;
+}
+
+/* Each label sits on its own line, with its input below the text */
+dialog label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+dialog input,
+dialog select,
+dialog textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;   /* width includes padding, so it doesn't overflow */
+  margin-top: 4px;
+  padding: 7px 9px;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 14px;
+}
+
+dialog input:focus,
+dialog select:focus,
+dialog textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Severity, status, and date side by side, equal widths */
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+
+fieldset {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 12px 4px;
+  margin: 0 0 12px;
+}
+
+legend {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 0 4px;
+}
+
+/* Case type checkboxes in two columns */
+.type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 12px;
+}
+
+/* A checkbox and its text on one line (overrides "dialog label" above) */
+dialog .type-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+/* Undo the full-width input style for checkboxes */
+dialog .type-option input {
+  display: inline;
+  width: auto;
+  margin: 0;
+}
+
+.error {
+  color: var(--sev-critical);
+  font-size: 13px;
+  min-height: 1em;          /* keeps its space even when empty */
+  margin: 0 0 12px;
+}
+
+/* Cancel and Create, on the right */
+.form-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ---------- Selected case header (above the tabs) ---------- */
+
+#case-header {
+  margin-bottom: 12px;
+}
+
+.case-header-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;          /* long titles push tags to the next line */
+}
+
+.case-header-top h2 {
+  margin: 0 4px 0 0;
+  font-size: 20px;
+}
+
+.case-header-meta {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 4px 0 8px;
+}
+
+.case-header-types {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+/* Case type tags: neutral gray, so they don't compete with severity */
+.tag-type {
+  color: var(--ink);
+  border-color: var(--line);
+  background: var(--hover);
+}
+
+/* Status tag colors. Class is built as "status-" + status. */
+.status-open      { color: var(--status-open); }
+.status-contained { color: var(--status-contained); }
+.status-closed    { color: var(--status-closed); }
+
+/* "Opened 2026-09-27" in the top-right corner of the header.
+   In a flex row, margin-left: auto takes up all the spare space
+   on its left, which pushes it to the far right. */
+.case-opened {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* "Load sample data": a smaller, quieter button */
+#sample-data-btn {
+  width: 100%;
+  margin-bottom: 12px;
+  font-size: 12px;
+  padding: 5px 10px;
+  color: var(--muted);
+}
+
+/* ---------- Tables (Evidence, and later other tabs) ---------- */
+
+/* Heading on the left, buttons (e.g. "Add evidence") on the right */
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.panel-header h2 {
+  margin: 0;
+}
+
+/* Wide tables scroll sideways inside this box instead of
+   stretching the whole page. */
+.table-wrap {
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;   /* single lines between cells, not double */
+  font-size: 13px;
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.data-table th {
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.data-table tbody tr:hover {
+  background: var(--hover);
+}
+
+/* Keep IDs and dates on one line */
+.nowrap {
+  white-space: nowrap;
+}
+
+/* Long notes wrap instead of making the table huge */
+.notes {
+  min-width: 160px;
+  max-width: 320px;
+}
+
+.data-table a {
+  color: var(--accent);
+}
+
+/* Monospace font for hashes, so characters line up */
+code {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+}
+
+/* ---------- Extra button styles ---------- */
+
+.btn-small {
+  padding: 3px 9px;
+  font-size: 12px;
+}
+
+/* Red outline for destructive actions like Remove */
+.btn-danger {
+  color: var(--sev-critical);
+  border-color: var(--sev-critical);
+  background: none;
+}
+
+.btn-danger:hover {
+  background: var(--sev-critical);
+  color: #0b1117;
+}
+
+/* ---------- Evidence form ---------- */
+
+/* The "hidden" attribute normally hides an element, but our
+   "dialog label { display: block }" rule would override it.
+   !important makes sure hidden always wins. */
+[hidden] {
+  display: none !important;
+}
+
+/* Two fields side by side (the 3-column version is .form-row) */
+.form-row.form-row-2 {
+  grid-template-columns: 1fr 1fr;
+}
+
+/* Cloud link / Local file radio buttons on one line */
+.radio-row {
+  display: flex;
+  gap: 20px;
+}
+
+dialog textarea {
+  resize: vertical;         /* can be made taller, not wider */
+}
+
+.small {
+  font-size: 12px;
+}
+
+/* Gray out a button while it can't be used (e.g. while hashing) */
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------- Evidence: export button, raw log ---------- */
+
+/* Buttons side by side in a panel header (Export CSV, + Add evidence) */
+.header-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+/* Monospace text boxes for pasted logs */
+textarea.mono {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+}
+
+/* The "▸ 3 lines" toggle in the table */
+.raw-log summary {
+  cursor: pointer;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* The opened raw log: keeps line breaks, scrolls if very long */
+.raw-log pre {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  margin: 6px 0 0;
+  max-width: 480px;
+  max-height: 240px;
+  overflow: auto;           /* scroll bars when it doesn't fit */
+  white-space: pre-wrap;    /* wrap long lines instead of one huge line */
+  word-break: break-all;    /* break long tokens like hashes or JSON */
+}
+
+/* ---------- Assets: status tag colors ---------- */
+/* Class is built in tabs/assets.js as "asset-" + status. */
+.asset-suspected  { color: var(--sev-medium); }
+.asset-confirmed  { color: var(--sev-critical); }
+.asset-contained  { color: var(--status-contained); }
+.asset-remediated { color: var(--accent); }
+.asset-clean      { color: var(--sev-low); }
+
+/* ---------- Storyline ---------- */
+
+/* MITRE tactic tag */
+.tag-tactic {
+  color: var(--accent);
+}
+
+/* Confidence tags. Class is built as "confidence-" + level. */
+.confidence-high   { color: var(--sev-low); }      /* green: confirmed */
+.confidence-medium { color: var(--sev-medium); }   /* yellow: likely */
+.confidence-low    { color: var(--muted); }        /* gray: possible */
+
+/* Box at the top of the storyline pop-up showing the evidence's raw log */
+.reference-box {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+
+.reference-box pre {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  margin: 6px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Monospace single-line inputs (technique IDs) */
+input.mono {
+  font-family: Consolas, "Courier New", monospace;
+}
+
+/* ---------- Storyline timeline (IRIS-style) ---------- */
+
+/* Day header: "2026-09-18" with a line running to the right */
+.tl-day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 8px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tl-day:first-child {
+  margin-top: 0;
+}
+
+/* The line after the date. flex: 1 makes it fill the leftover width. */
+.tl-day::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+
+/* One entry: three columns = time | line with dot | box */
+.tl-item {
+  display: grid;
+  grid-template-columns: 96px 28px 1fr;
+}
+
+/* Left column: the clock time, right-aligned against the line */
+.tl-time {
+  text-align: right;
+  padding-top: 10px;
+}
+
+.tl-clock {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tl-zone {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Middle column: the vertical line, drawn with ::before */
+.tl-marker {
+  position: relative;       /* so the line and dot position inside it */
+}
+
+.tl-marker::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid var(--line);
+}
+
+/* The dot on the line. background: currentColor uses the text color
+   set by .confidence-high / -medium / -low as the fill color. */
+.tl-dot {
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  width: 12px;
+  height: 12px;
+  margin-left: -5px;        /* center it on the 2px line */
+  border-radius: 50%;       /* makes the square a circle */
+  background: currentColor;
+  box-shadow: 0 0 0 3px var(--panel);   /* small gap around the dot */
+}
+
+/* Right column: the entry's box */
+.tl-card {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.tl-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Edit / Remove pushed to the right end of the box header */
+.tl-card-buttons {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+.tl-host {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+.tl-what {
+  margin-top: 4px;
+  font-size: 14px;
+  white-space: pre-wrap;    /* keep line breaks you typed */
+}
+
+.tl-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+
+.tl-foot a {
+  color: var(--accent);
+}
+
+/* "Show times in" in the sidebar */
+.sidebar-setting {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.sidebar-setting select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 13px;
+}
+
+/* ---------- IOCs ---------- */
+
+/* Long values (URLs, command lines, hashes) wrap inside the cell */
+.ioc-value {
+  min-width: 180px;
+  max-width: 420px;
+  word-break: break-all;
+}
+
+/* TLP tag colors. Class is built as "tlp-" + level. */
+.tlp-clear        { color: var(--ink); }
+.tlp-green        { color: var(--sev-low); }
+.tlp-amber        { color: var(--sev-medium); }
+.tlp-amber-strict { color: var(--sev-high); }
+.tlp-red          { color: var(--sev-critical); }
+
+/* ---------- IOC extractor ---------- */
+
+/* A wider pop-up for the extractor checklist */
+dialog.dialog-wide {
+  width: min(900px, 94vw);
+}
+
+/* Select all / none row */
+.extract-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/* The checklist scrolls inside the pop-up if it's long */
+.extract-list {
+  max-height: 50vh;         /* half the window height */
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+/* Undo the full-width dialog input style for the checklist boxes */
+.extract-list input[type="checkbox"] {
+  display: inline;
+  width: auto;
+  margin: 0;
+}
+
+/* Values already in IOCs are shown faded */
+.extract-existing {
+  opacity: 0.5;
+}
+
+/* One-time message above a table, e.g. "Added 4 IOCs from raw logs." */
+.notice {
+  background: var(--hover);
+  border-left: 3px solid var(--sev-low);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+/* "(Asia/Manila, UTC+08:00)" after a time field's label */
+.zone-hint {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+/* Small explanation under the sidebar's time zone dropdown */
+.sidebar-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ---------- Client tab ---------- */
+
+/* Each section (Organization, Subscriptions, ...) as its own box */
+.client-section {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 16px 4px;
+  margin-bottom: 14px;
+  background: var(--bg);
+}
+
+.client-section h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+/* Heading on the left, a button on the right */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.section-header h3 {
+  margin: 0;
+}
+
+/* Fields in columns: as many 240px+ columns as fit the width.
+   auto-fill + minmax = "fit as many as you can, each at least 240px". */
+.client-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0 14px;
+}
+
+.client-field {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+/* Inputs on the Client tab (and small ones inside tables) */
+.client-field input,
+.client-field select,
+.client-field textarea,
+.cell-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 14px;
+}
+
+.cell-input {
+  margin-top: 0;
+  min-width: 120px;
+  font-size: 13px;
+}
+
+.client-field textarea {
+  resize: vertical;
+}
+
+.client-field input:focus,
+.client-field select:focus,
+.client-field textarea:focus,
+.cell-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* The "Use as sidebar time zone" button under the zone dropdown */
+.field-action {
+  display: block;
+  margin-top: 6px;
+}
+
+.center {
+  text-align: center;
+}
+
+/* ---------- Alerts (colored boxes) ---------- */
+
+.alert {
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: 0 0 12px;
+  font-size: 14px;
+  border: 1px solid;
+}
+
+.alert-danger {
+  color: var(--sev-critical);
+  border-color: var(--sev-critical);
+  background: rgba(214, 92, 92, 0.08);   /* the red, very faint */
+}
+
+.alert-warning {
+  color: var(--sev-medium);
+  border-color: var(--sev-medium);
+  background: rgba(201, 164, 76, 0.08);
+}
+
+.alert-ok {
+  color: var(--sev-low);
+  border-color: var(--sev-low);
+  background: rgba(111, 163, 122, 0.08);
+}
+
+.no-edr-list {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--ink);
+}
+
+.no-edr-list li {
+  margin-bottom: 4px;
+}
+
+/* Red warning tag, e.g. "⚠ 2 devices without EDR" or "no EDR" */
+.tag-warning {
+  color: var(--sev-critical);
+  font-weight: 600;
+}
+
+/* ---------- Device list cards ---------- */
+
+.device-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.device-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--panel);
+}
+
+.device-card-head {
+  margin-bottom: 6px;
+}
+
+.device-count {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.device-card-buttons {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+/* Preview box in the import pop-up */
+.device-preview {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  max-height: 180px;
+  overflow: auto;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  margin-top: 0;
+}
+
+/* Dropdowns in the people table need room for labels like
+   "Client (their own staff)" */
+select.cell-input {
+  min-width: 190px;
+}
+
+/* ---------- Subscriptions: one line per tool ---------- */
+
+/* Tool name | dropdown | extra fields, all on one line (wraps on
+   narrow screens) */
+.sub-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.sub-row:last-child {
+  border-bottom: none;
+  margin-bottom: 8px;
+}
+
+/* Fixed-width tool name, so all the dropdowns line up */
+.sub-label {
+  width: 140px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.sub-inline-label {
+  font-size: 13px;
+  color: var(--muted);
+  margin-left: 8px;
+}
+
+.sub-row select,
+.sub-row input {
+  width: 230px;
+  padding: 6px 8px;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 14px;
+}
+
+.sub-row select:focus,
+.sub-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* ---------- Device cards: RMM check ---------- */
+
+.rmm-check {
+  border-top: 1px solid var(--line);
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+.text-danger {
+  color: var(--sev-critical);
+}
+
+/* Links styled as buttons (the "Open" link) */
+a.btn {
+  text-decoration: none;
+  display: inline-block;
+}
