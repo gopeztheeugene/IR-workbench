@@ -188,15 +188,62 @@ App.SAMPLE_CLIENT = {
       "subscriptions.binalyze": "no",
       "environment.identity": "On-prem AD + Entra ID (hybrid). MFA on M365 only.",
       "environment.email": "Microsoft 365 E3",
-      "environment.backups": "Veeam to on-site NAS. No immutable copy.",
+      "backups.responsible": "msp",
+      "backups.responsibleName": "Thrive backup team",
+      "backups.product": "Veeam Backup & Replication 12",
+      "backups.allServers": "no",
+      "backups.allServersNotes": "ACME-ERP01 SQL only has native SQL backups, not in Veeam",
+      "backups.retention": "14 daily, 4 weekly",
+      "backups.rpo": "Nightly at 22:00, RPO 24 hours",
+      "backups.storage.onPrem": true,
+      "backups.storageNotes": "Synology NAS in the HQ server room (domain-joined)",
+      "backups.immutable": "no",
+      "insurance.hasCyber": "yes",
+      "insurance.provider": "Example Cyber Mutual",
+      "environment.network": "Flat network, HQ + 1 branch, FortiGate at both",
+      "environment.vpn.ssl": true,
+      "environment.vpn.siteToSite": true,
+      "environment.vpnNotes": "FortiClient SSL VPN, no MFA. Site-to-site HQ <-> branch.",
+      "environment.topologyLink": "https://sharepoint.example/sites/acme-it/Network%20Topology.pdf",
       "scope.inScope": "All Windows endpoints and servers, M365 tenant",
       "scope.outOfScope": "Shop-floor OT network",
-      "devices.manualNoEdr": "ACME-KIOSK02"
+      "devices.manualNoEdr": "ACME-KIOSK02",
+      "adTriage.ranOn": "ADMIN-WS01 (remote, RSAT)",
+      "adTriage.ranAt": "2026-09-20T15:10:00",
+      "adTriage.ranBy": "ir-analyst",
+      "adTriage.output": [
+        "================== Domain Information ==================",
+        "DNSRoot             : hq.acme.example",
+        "NetBIOSName         : ACME",
+        "DomainMode          : Windows2016Domain",
+        "",
+        "================== Forest Information ==================",
+        "Name       : acme.example",
+        "RootDomain : acme.example",
+        "ForestMode : Windows2016Forest",
+        "",
+        "Sites:",
+        "HQ",
+        "Branch",
+        "",
+        "================== Trusts ==================",
+        "Direction    : BiDirectional",
+        "ForestTransitive : True",
+        "Name         : partner.example",
+        "SIDFilteringQuarantined : False",
+        "SelectiveAuthentication : False"
+      ].join("\n")
     },
     people: [
       { name: "Dana Reyes", role: "support", side: "client", email: "dana.reyes@acme.example", phone: "+1 555 0101", primary: true },
       { name: "Sam Ortiz", role: "account-manager", side: "msp", email: "sam.ortiz@msp.example", phone: "+1 555 0142" },
       { name: "Lee Park", role: "legal", side: "third-party", company: "Breach Coach LLP", email: "lpark@coach.example" }
+    ],
+    // Restore / recovery order (#1 first).
+    critical: [
+      { name: "ACME-DC01", purpose: "Domain controller: everything needs AD", backup: "Veeam nightly, system state" },
+      { name: "ACME-ERP01", purpose: "ERP database: production stops without it", backup: "SQL native backups + Veeam" },
+      { name: "ACME-FS01", purpose: "File server: shared drives", backup: "Veeam nightly (encrypted, restore from NAS)" }
     ],
     // Paths are set in App.loadSampleClient (they point at this
     // project's samples/ folder). The RMM check result:
@@ -220,6 +267,12 @@ App.loadSampleClient = function (caseId) {
     const id = App.addPerson(caseId);
     for (const key in person) {
       App.updatePerson(caseId, id, key, person[key]);
+    }
+  }
+  for (const item of sample.critical) {
+    const id = App.addCriticalAsset(caseId);
+    for (const key in item) {
+      App.updateCriticalAsset(caseId, id, key, item[key]);
     }
   }
   // Point the device list paths at this project's samples/ folder.

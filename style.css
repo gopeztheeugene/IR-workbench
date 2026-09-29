@@ -976,9 +976,9 @@ dialog.dialog-wide {
 }
 
 /* Dropdowns in the people table need room for labels like
-   "Client (their own staff)" */
+   "Account / client manager" */
 select.cell-input {
-  min-width: 190px;
+  min-width: 170px;
 }
 
 /* ---------- Subscriptions: one line per tool ---------- */
@@ -1001,7 +1001,7 @@ select.cell-input {
 
 /* Fixed-width tool name, so all the dropdowns line up */
 .sub-label {
-  width: 140px;
+  width: 180px;
   font-weight: 600;
   font-size: 14px;
 }
@@ -1046,4 +1046,76 @@ select.cell-input {
 a.btn {
   text-decoration: none;
   display: inline-block;
+}
+
+/* ---------- Environment: one line per item ---------- */
+
+/* A field that fills the rest of its row (overrides the 230px width) */
+.sub-row .grow {
+  flex: 1;
+  min-width: 260px;
+  width: auto;
+}
+
+/* The VPN column: tick boxes on one line, notes box underneath */
+div.grow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.check-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+
+.check-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* Undo the 230px width rule for the small tick boxes */
+.sub-row .check-inline input {
+  width: auto;
+  margin: 0;
+}
+
+/* The big restore-order number (#1, #2, ...) */
+.restore-order {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+  text-align: center;
+  width: 36px;
+}
+
+/* Critical assets: the two description columns get more room */
+.cell-input[data-key="purpose"],
+.cell-input[data-key="backup"] {
+  min-width: 300px;
+}
+
+/* ---------- Active Directory triage output ---------- */
+
+/* Big monospace box. No wrapping (white-space: pre), so PowerShell's
+   table columns stay lined up; scroll sideways for long lines. */
+.client-field textarea.ad-output {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  min-height: 320px;
+  white-space: pre;
+  overflow: auto;
+  tab-size: 4;
+}
+
+.ad-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: -4px 0 12px;
 }

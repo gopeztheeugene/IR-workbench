@@ -18,6 +18,9 @@ exports/
 *.csv
 !samples/*.csv
 
+# Scripts that live in their own repos (e.g. github.com/gopeztheeugene/ad-triage)
+adtriage.ps1
+
 # Editor and OS clutter
 .vscode/
 Thumbs.db

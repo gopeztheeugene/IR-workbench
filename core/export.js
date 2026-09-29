@@ -170,3 +170,15 @@ App.pathToFileUrl = function (path) {
   }
   return "";
 };
+
+// A clickable link for something the user pasted: a web link
+// (https://... or http://...) or a file path (C:\... or \\server\...).
+// Returns "" for anything else. SAFETY: nothing else becomes a link,
+// so a "javascript:..." value can never be clicked.
+App.linkFor = function (text) {
+  const t = App.cleanPath(text);
+  if (/^https?:\/\//i.test(t)) {
+    return t;
+  }
+  return App.pathToFileUrl(t);
+};

@@ -191,6 +191,14 @@ App.CLIENT_CHOICES = {
   ]
 };
 
+// Kinds of VPN a client can have (tick boxes; several can apply).
+App.VPN_TYPES = [
+  { key: "ssl",        label: "Remote access SSL VPN" },
+  { key: "web",        label: "Web / clientless portal" },
+  { key: "siteToSite", label: "Site-to-site" },
+  { key: "ipsec",      label: "Remote access IPsec" }
+];
+
 // People on the incident response team and client contacts.
 App.PERSON_ROLES = [
   { key: "support",         label: "Support / IT" },
@@ -204,11 +212,13 @@ App.PERSON_ROLES = [
   { key: "other",           label: "Other" }
 ];
 
-// Who a person works for / who manages them.
+// Who a person works for / who is responsible for something.
+// Used by "Managed by" (IR team & contacts) and "Responsible party"
+// (Backups). Only the labels are shown; the keys are what's saved.
 App.PERSON_SIDES = [
-  { key: "client",      label: "Client (their own staff)" },
-  { key: "msp",         label: "Our MSP" },
-  { key: "third-party", label: "Third party" }
+  { key: "client",      label: "Client Owned" },
+  { key: "msp",         label: "Thrive" },
+  { key: "third-party", label: "3rd Party" }
 ];
 
 // The three device lists that can be imported from CSV.
@@ -996,7 +1006,39 @@ App.newClientInfo = function () {
     },
     people: [],             // see App.addPerson
     nextPersonNumber: 1,
-    environment: { identity: "", email: "", backups: "", network: "", cloud: "", os: "", other: "" },
+    environment: {
+      identity: "", email: "", network: "",
+      // VPN: one true/false per App.VPN_TYPES key, plus free-text notes.
+      vpn: { ssl: false, web: false, siteToSite: false, ipsec: false },
+      vpnNotes: "",
+      // Web link or file path to the network diagram (App.linkFor).
+      topologyLink: "",
+      cloud: "", os: "", other: ""
+    },
+    // Backups. "" = not set; yes/no answers use App.CLIENT_CHOICES.yesNo.
+    backups: {
+      responsible: "",        // "client" / "msp" / "third-party" (App.PERSON_SIDES)
+      responsibleName: "",    // person or company
+      product: "",
+      allServers: "",         // yes / no
+      allServersNotes: "",    // which servers (or which are NOT backed up)
+      retention: "",
+      rpo: "",                // backup interval / recovery point objective
+      storage: { cloud: false, onPrem: false },
+      storageNotes: "",
+      immutable: ""           // yes / no
+    },
+    // Cyber insurance.
+    insurance: { hasCyber: "", provider: "" },
+    // Pasted output of the adtriage.ps1 script (Active Directory map:
+    // domains, forest, sites, trusts, universal groups, Enterprise
+    // Admins, foreign security principals, subnets, DHCP).
+    // ranAt is UTC, like every saved time.
+    adTriage: { ranOn: "", ranAt: "", ranBy: "", output: "" },
+    // Important assets, in the order they should be restored /
+    // recovered (#1 first). See App.addCriticalAsset.
+    criticalAssets: [],
+    nextCriticalNumber: 1,
     scope: { inScope: "", outOfScope: "", authorization: "" },
     devices: {
       // Where each device list CSV is on disk, pasted by the user,
@@ -1065,6 +1107,47 @@ App.updatePerson = function (caseId, personId, key, value) {
 App.deletePerson = function (caseId, personId) {
   const info = App.findCase(caseId).clientInfo;
   info.people = info.people.filter(function (p) { return p.id !== personId; });
+};
+
+// ---- Critical assets (restore / recovery order) ----
+// Each: { id: "CR-001", name, purpose, backup }. The list's ORDER is
+// the restore order: index 0 is restored first.
+
+App.addCriticalAsset = function (caseId) {
+  const info = App.findCase(caseId).clientInfo;
+  const id = "CR-" + String(info.nextCriticalNumber).padStart(3, "0");
+  info.criticalAssets.push({ id: id, name: "", purpose: "", backup: "" });
+  info.nextCriticalNumber = info.nextCriticalNumber + 1;
+  return id;
+};
+
+App.updateCriticalAsset = function (caseId, id, key, value) {
+  const item = App.findCase(caseId).clientInfo.criticalAssets.find(function (a) { return a.id === id; });
+  if (!item || !(key in item) || key === "id") {
+    return false;
+  }
+  item[key] = value;
+  return true;
+};
+
+App.deleteCriticalAsset = function (caseId, id) {
+  const info = App.findCase(caseId).clientInfo;
+  info.criticalAssets = info.criticalAssets.filter(function (a) { return a.id !== id; });
+};
+
+// Move an item up (step -1) or down (step +1) in the restore order.
+// Swapping two list items works like Python's a[i], a[j] = a[j], a[i].
+App.moveCriticalAsset = function (caseId, id, step) {
+  const list = App.findCase(caseId).clientInfo.criticalAssets;
+  const i = list.findIndex(function (a) { return a.id === id; });
+  const j = i + step;
+  if (i === -1 || j < 0 || j >= list.length) {
+    return false;                          // already at the top / bottom
+  }
+  const temp = list[i];
+  list[i] = list[j];
+  list[j] = temp;
+  return true;
 };
 
 // ---- Device lists (EDR / RMM / SIEM) and EDR coverage ----

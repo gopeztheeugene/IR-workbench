@@ -35,12 +35,14 @@ App.tabs.client = {
 
     html += tab.orgHtml(caseObj) +
             tab.subscriptionsHtml(caseObj) +
+            tab.insuranceHtml(caseObj) +
             tab.peopleHtml(caseObj) +
             tab.environmentHtml(caseObj) +
             tab.scopeHtml(caseObj) +
             tab.devicesHtml(caseObj, missing);
 
     panel.innerHTML = html;
+    App.time.fillZoneHints();     // "(UTC)" / "(Asia/Manila, UTC+08:00)" on time labels
   },
 
   // ---------------------------------------------------------------
@@ -87,10 +89,12 @@ App.tabs.client = {
     return `<select data-field="${e(path)}">${options}</select>`;
   },
 
-  // Just the text box (no label).
-  bareText: function (caseObj, path, placeholder) {
+  // Just the text box (no label). className is optional, e.g. "grow"
+  // to make the box fill the rest of its row.
+  bareText: function (caseObj, path, placeholder, className) {
     const e = App.escapeHtml;
-    return `<input data-field="${e(path)}" value="${e(App.tabs.client.get(caseObj, path))}"
+    const cls = className ? ` class="${e(className)}"` : "";
+    return `<input${cls} data-field="${e(path)}" value="${e(App.tabs.client.get(caseObj, path))}"
                    placeholder="${e(placeholder || "")}">`;
   },
 
@@ -257,20 +261,269 @@ App.tabs.client = {
     `;
   },
 
+  // One line per item: label on the left, the field filling the rest.
   environmentHtml: function (c) {
     const tab = App.tabs.client;
+    const e = App.escapeHtml;
+    const env = c.clientInfo.environment;
+
+    // A one-line row with a wide text box.
+    function row(label, path, placeholder) {
+      return `<div class="sub-row">
+                <span class="sub-label">${label}</span>
+                <input class="grow" data-field="${path}" value="${e(tab.get(c, path))}"
+                       placeholder="${e(placeholder)}">
+              </div>`;
+    }
+
+    // VPN: one tick box per type. data-field points at true/false.
+    const vpnBoxes = App.VPN_TYPES
+      .map(function (v) {
+        const checked = env.vpn[v.key] ? " checked" : "";
+        return `<label class="check-inline">
+                  <input type="checkbox" data-field="environment.vpn.${v.key}"${checked}> ${e(v.label)}
+                </label>`;
+      })
+      .join("");
+
+    // Network topology: Open + Copy once a web link or full path is in.
+    const link = App.linkFor(env.topologyLink);
+    let topologyButtons = "";
+    if (link) {
+      topologyButtons = `<a class="btn btn-small" href="${e(link)}" target="_blank"
+                            rel="noopener noreferrer">Open</a>
+                         <button class="btn btn-small" data-action="copy-topology">Copy</button>`;
+    } else if (env.topologyLink.trim() !== "") {
+      topologyButtons = '<span class="error small">Use a https:// link or a full path (C:\\... or \\\\server\\...)</span>';
+    }
+
     return `
       <section class="client-section">
         <h3>Environment</h3>
-        <div class="client-grid">
-          ${tab.area(c, "Identity", "environment.identity", "On-prem AD + Entra ID (hybrid), MFA on VPN only")}
-          ${tab.area(c, "Email", "environment.email", "Microsoft 365 E3, Defender for Office")}
-          ${tab.area(c, "Backups", "environment.backups", "Veeam to NAS, immutable copy offsite? Last tested?")}
-          ${tab.area(c, "Network / VPN", "environment.network", "FortiGate VPN, flat network, 3 sites")}
-          ${tab.area(c, "Cloud", "environment.cloud", "Azure (1 subscription), no AWS")}
-          ${tab.area(c, "OS mix", "environment.os", "Windows 10/11, Server 2019, a few Linux")}
-          ${tab.area(c, "Other", "environment.other", "Anything else worth knowing")}
+        ${row("Identity", "environment.identity", "On-prem AD + Entra ID (hybrid), MFA on VPN only")}
+        ${row("Email", "environment.email", "Microsoft 365 E3, Defender for Office")}
+        ${row("Network", "environment.network", "Flat network, 3 sites, FortiGate at each")}
+        <div class="sub-row">
+          <span class="sub-label">VPN</span>
+          <div class="grow">
+            <div class="check-row">${vpnBoxes}</div>
+            <input class="grow" data-field="environment.vpnNotes" value="${e(env.vpnNotes)}"
+                   placeholder="VPN notes: FortiClient, MFA? Which users / sites?">
+          </div>
         </div>
+        <div class="sub-row">
+          <span class="sub-label">Network topology</span>
+          <input class="grow mono" data-field="environment.topologyLink" value="${e(env.topologyLink)}"
+                 placeholder="https://... or C:\\...\\topology.vsdx">
+          ${topologyButtons}
+        </div>
+        ${row("Cloud", "environment.cloud", "Azure (1 subscription), no AWS")}
+        ${row("OS mix", "environment.os", "Windows 10/11, Server 2019, a few Linux")}
+        ${row("Other", "environment.other", "Anything else worth knowing")}
+      </section>
+      ${tab.backupsHtml(c)}
+      ${tab.criticalHtml(c)}
+      ${tab.adTriageHtml(c)}
+    `;
+  },
+
+  // Backups: one line per question. Red tags for the answers that matter
+  // most in a recovery (not all servers backed up, not immutable).
+  backupsHtml: function (c) {
+    const tab = App.tabs.client;
+    const e = App.escapeHtml;
+    const b = c.clientInfo.backups;
+    const yesNo = App.CLIENT_CHOICES.yesNo;
+
+    // A one-line row with a wide text box.
+    function row(label, path, placeholder) {
+      return `<div class="sub-row">
+                <span class="sub-label">${label}</span>
+                <input class="grow" data-field="${path}" value="${e(tab.get(c, path))}"
+                       placeholder="${e(placeholder)}">
+              </div>`;
+    }
+
+    // "Not set" + Client Owned / Thrive / 3rd Party. [...a, ...b] joins
+    // two lists, like a + b in Python.
+    const sides = [{ key: "", label: "Not set" }, ...App.PERSON_SIDES];
+
+    // All servers backed up: a details box for either answer, with a hint
+    // that fits the answer, and a red tag for "No".
+    let serversExtra = "";
+    if (b.allServers === "yes") {
+      serversExtra = tab.bareText(c, "backups.allServersNotes", "Which servers, and how?", "grow");
+    } else if (b.allServers === "no") {
+      serversExtra = tab.bareText(c, "backups.allServersNotes", "Which servers are NOT backed up?", "grow") +
+        '<span class="tag tag-warning">⚠ not all servers backed up</span>';
+    }
+
+    // Storage location: tick boxes (both can apply).
+    const storage = [["cloud", "Cloud"], ["onPrem", "On-prem"]]
+      .map(function (pair) {
+        const checked = b.storage[pair[0]] ? " checked" : "";
+        return `<label class="check-inline">
+                  <input type="checkbox" data-field="backups.storage.${pair[0]}"${checked}> ${pair[1]}
+                </label>`;
+      })
+      .join("");
+
+    const immutableTag = b.immutable === "no"
+      ? '<span class="tag tag-warning">⚠ backups are not immutable</span>'
+      : "";
+
+    return `
+      <section class="client-section">
+        <h3>Backups</h3>
+        <div class="sub-row">
+          <span class="sub-label">Responsible party</span>
+          ${tab.bareSelect(c, "backups.responsible", sides)}
+          <input class="grow" data-field="backups.responsibleName" value="${e(b.responsibleName)}"
+                 placeholder="Name / company">
+        </div>
+        ${row("Backup product", "backups.product", "Veeam, Datto, Acronis, Azure Backup...")}
+        <div class="sub-row">
+          <span class="sub-label">All servers backed up?</span>
+          ${tab.bareSelect(c, "backups.allServers", yesNo)}
+          ${serversExtra}
+        </div>
+        ${row("Retention period", "backups.retention", "30 daily, 12 monthly, 7 yearly")}
+        ${row("Backup interval / RPO", "backups.rpo", "Nightly at 22:00, RPO 24 hours")}
+        <div class="sub-row">
+          <span class="sub-label">Storage location</span>
+          <div class="grow">
+            <div class="check-row">${storage}</div>
+            <input class="grow" data-field="backups.storageNotes" value="${e(b.storageNotes)}"
+                   placeholder="NAS in the server room; offsite copy in Wasabi / Azure...">
+          </div>
+        </div>
+        <div class="sub-row">
+          <span class="sub-label">Immutable?</span>
+          ${tab.bareSelect(c, "backups.immutable", yesNo)}
+          ${immutableTag}
+        </div>
+      </section>
+    `;
+  },
+
+  // Cyber insurance: Yes/No, and the provider if Yes.
+  insuranceHtml: function (c) {
+    const tab = App.tabs.client;
+    const ins = c.clientInfo.insurance;
+    const provider = ins.hasCyber === "yes"
+      ? '<span class="sub-inline-label">Provider</span>' +
+        tab.bareText(c, "insurance.provider", "Insurance provider", "grow")
+      : "";
+    return `
+      <section class="client-section">
+        <h3>Insurance</h3>
+        <div class="sub-row">
+          <span class="sub-label">Cyber insurance</span>
+          ${tab.bareSelect(c, "insurance.hasCyber", App.CLIENT_CHOICES.yesNo)}
+          ${provider}
+        </div>
+      </section>
+    `;
+  },
+
+  // Pasted output of adtriage.ps1, plus when / where / by whom it ran.
+  adTriageHtml: function (c) {
+    const e = App.escapeHtml;
+    const ad = c.clientInfo.adTriage;
+
+    // Line count, e.g. "1,284 lines". toLocaleString adds the comma,
+    // like Python's f"{n:,}".
+    const lines = ad.output === "" ? 0 : ad.output.split("\n").length;
+    const footer = lines === 0 ? "" :
+      `<div class="ad-footer">
+         <span class="muted small">${lines.toLocaleString()} line${lines === 1 ? "" : "s"}</span>
+         <button class="btn btn-small" data-action="copy-ad">Copy output</button>
+       </div>`;
+
+    return `
+      <section class="client-section">
+        <h3>Active Directory triage <span class="muted small">(adtriage.ps1 output)</span></h3>
+        <div class="sub-row">
+          <span class="sub-label">Ran on</span>
+          <input class="grow" data-field="adTriage.ranOn" value="${e(ad.ranOn)}"
+                 placeholder="Host it ran on / queried, e.g. ACME-DC01 or ADMIN-WS01 (remote)">
+        </div>
+        <div class="sub-row">
+          <span class="sub-label">Ran at <span class="zone-hint" data-zone-hint></span></span>
+          <!-- data-time: typed in the sidebar's zone, saved as UTC -->
+          <input type="datetime-local" step="1" data-field="adTriage.ranAt" data-time
+                 value="${e(App.time.toDisplay(ad.ranAt))}">
+        </div>
+        <div class="sub-row">
+          <span class="sub-label">Ran by</span>
+          <input class="grow" data-field="adTriage.ranBy" value="${e(ad.ranBy)}"
+                 placeholder="Account used, e.g. ACME\\ir-analyst">
+        </div>
+        <label class="client-field">Output
+          <!-- wrap="off" + CSS keep PowerShell's columns lined up -->
+          <textarea data-field="adTriage.output" class="ad-output" wrap="off" spellcheck="false"
+                    placeholder="Paste the contents of active_directory.txt here">${e(ad.output)}</textarea>
+        </label>
+        ${footer}
+      </section>
+    `;
+  },
+
+  // Critical assets, numbered in restore / recovery order (#1 first).
+  criticalHtml: function (c) {
+    const e = App.escapeHtml;
+    const list = c.clientInfo.criticalAssets;
+
+    let body;
+    if (list.length === 0) {
+      body = '<p class="muted">No critical assets listed yet. Add them in the order they should be restored.</p>';
+    } else {
+      const rows = list.map(function (a, i) {
+        // A text box in a cell; data-critical + data-key say what it saves to.
+        function cell(key, placeholder, extra) {
+          return `<input class="cell-input" data-critical="${e(a.id)}" data-key="${key}"
+                         value="${e(a[key])}" placeholder="${e(placeholder)}"${extra || ""}>`;
+        }
+        // The first row can't move up; the last can't move down.
+        const up = i === 0 ? " disabled" : "";
+        const down = i === list.length - 1 ? " disabled" : "";
+        return `
+          <tr>
+            <td class="restore-order">${i + 1}</td>
+            <td>${cell("name", "ACME-DC01", " data-asset-picker")}</td>
+            <td>${cell("purpose", "Domain controller: everything needs AD")}</td>
+            <td>${cell("backup", "Veeam nightly, last restore test 08/2026")}</td>
+            <td class="nowrap">
+              <button class="btn btn-small" data-action="move-critical" data-id="${e(a.id)}"
+                      data-step="-1" title="Restore earlier"${up}>↑</button>
+              <button class="btn btn-small" data-action="move-critical" data-id="${e(a.id)}"
+                      data-step="1" title="Restore later"${down}>↓</button>
+              <button class="btn btn-small btn-danger" data-action="remove-critical"
+                      data-id="${e(a.id)}">Remove</button>
+            </td>
+          </tr>
+        `;
+      });
+      body = `
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr><th>#</th><th>Asset</th><th>Role / why it matters</th>
+                  <th>Backup / recovery notes</th><th></th></tr>
+            </thead>
+            <tbody>${rows.join("")}</tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    return `
+      <section class="client-section">
+        <div class="section-header">
+          <h3>Critical assets: restore / recovery order</h3>
+          <button class="btn btn-small" data-action="add-critical">+ Add asset</button>
+        </div>
+        ${body}
       </section>
     `;
   },
@@ -448,20 +701,29 @@ App.tabs.client = {
     panel.addEventListener("input", function (event) {
       const t = event.target;
       const caseId = App.state.selectedCaseId;
-      if (t.dataset.field && t.tagName !== "SELECT") {
-        App.setClientField(caseId, t.dataset.field, t.value);
+      // Tick boxes and dropdowns are handled in "change" below.
+      if (t.type === "checkbox" || t.tagName === "SELECT") {
+        return;
+      }
+      if (t.dataset.field) {
+        // Time boxes (data-time) are typed in the sidebar's zone; save UTC.
+        const value = t.dataset.time !== undefined ? App.time.fromDisplay(t.value) : t.value;
+        App.setClientField(caseId, t.dataset.field, value);
         if (t.dataset.field === "clientName") {
           App.renderChrome();                     // sidebar + header show the name
         }
-      } else if (t.dataset.person && t.type !== "checkbox" && t.tagName !== "SELECT") {
+      } else if (t.dataset.person) {
         App.updatePerson(caseId, t.dataset.person, t.dataset.key, t.value);
+      } else if (t.dataset.critical) {
+        App.updateCriticalAsset(caseId, t.dataset.critical, t.dataset.key, t.value);
       }
     });
 
     // 2. CHOOSING: dropdowns and tick boxes save, then redraw (they can
     //    show or hide other fields). A few text boxes also redraw when
-    //    you leave them: file paths (to show the Open link) and the
-    //    manual "no EDR" list (to update the warnings).
+    //    you leave them: file paths and the topology link (to show the
+    //    Open link) and the manual "no EDR" list (to update warnings).
+    //    Tick boxes just save true/false.
     panel.addEventListener("change", function (event) {
       const t = event.target;
       const caseId = App.state.selectedCaseId;
@@ -469,11 +731,13 @@ App.tabs.client = {
       if (field && t.tagName === "SELECT") {
         App.setClientField(caseId, field, t.value);
         App.render();
-      } else if (field.startsWith("devices.paths.")) {
+      } else if (field && t.type === "checkbox") {
+        App.setClientField(caseId, field, t.checked);   // true / false (e.g. VPN types)
+      } else if (field.startsWith("devices.paths.") || field === "environment.topologyLink") {
         App.setClientField(caseId, field, App.cleanPath(t.value));   // drop the quotes
         App.render();
-      } else if (field === "devices.manualNoEdr") {
-        App.render();
+      } else if (field === "devices.manualNoEdr" || field === "adTriage.output") {
+        App.render();             // update warnings / line count
       } else if (t.dataset.person && (t.tagName === "SELECT" || t.type === "checkbox")) {
         const value = t.type === "checkbox" ? t.checked : t.value;
         // Only one primary contact: ticking one unticks the others.
@@ -515,6 +779,24 @@ App.tabs.client = {
         const path = App.cleanPath(caseObj.clientInfo.devices.paths[button.dataset.source]);
         const ok = await App.copyText(path);
         App.flashButton(button, ok ? "Copied!" : "Copy failed");
+      } else if (action === "copy-ad") {
+        const ok = await App.copyText(caseObj.clientInfo.adTriage.output);
+        App.flashButton(button, ok ? "Copied!" : "Copy failed");
+      } else if (action === "copy-topology") {
+        const ok = await App.copyText(App.cleanPath(caseObj.clientInfo.environment.topologyLink));
+        App.flashButton(button, ok ? "Copied!" : "Copy failed");
+      } else if (action === "add-critical") {
+        App.addCriticalAsset(caseObj.id);
+        App.render();
+      } else if (action === "remove-critical") {
+        if (confirm("Remove this critical asset from the list?")) {
+          App.deleteCriticalAsset(caseObj.id, button.dataset.id);
+          App.render();
+        }
+      } else if (action === "move-critical") {
+        // data-step is "-1" (up) or "1" (down); Number() turns it into a number.
+        App.moveCriticalAsset(caseObj.id, button.dataset.id, Number(button.dataset.step));
+        App.render();
       } else if (action === "check-rmm") {
         fileInput.value = "";                   // so picking the same file again still fires
         fileInput.click();                      // opens the file picker
