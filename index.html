@@ -11,7 +11,9 @@
   <!-- LEFT SIDE: the sidebar with the list of cases. -->
   <aside class="sidebar">
     <h1>IR Workbench</h1>
-    <p class="muted">Not saved to disk yet (in memory only)</p>
+    <!-- Saving status: "Connect cases folder" / "✓ Saved 14:05:02" / ...
+         Drawn by core/storage.js (App.storage.renderStatus). -->
+    <div id="storage-status" class="storage-status"></div>
 
     <button id="new-case-btn" class="btn btn-primary">+ New case</button>
 
@@ -148,6 +150,11 @@
           <input type="file" id="evidence-file">
           <!-- When editing: "Current file: x.eml (kept unless you pick a new one)" -->
           <span id="evidence-current-file" class="small"></span>
+          <!-- Only shown when a cases folder is connected (tabs/evidence.js) -->
+          <span id="evidence-copy-row" class="type-option" hidden>
+            <input type="checkbox" id="evidence-copy" checked>
+            Copy the file into this case's evidence/ folder (and check the copy's SHA-256)
+          </span>
         </label>
       </fieldset>
 
@@ -355,6 +362,106 @@
     </form>
   </dialog>
 
+  <!-- ADD / EDIT ACTION ITEM POP-UP. Used by tabs/tasks.js. -->
+  <dialog id="task-dialog" class="dialog-wide">
+    <form id="task-form">
+      <h2 id="task-dialog-title">Add action item</h2>
+      <p class="muted small" id="task-dialog-hint"></p>
+
+      <label>Action *
+        <input name="title" required placeholder="Isolate ACME-WS114 via SentinelOne">
+      </label>
+
+      <div class="form-row">
+        <label>Action type
+          <select name="kind" id="task-kind"></select>
+        </label>
+        <label>Priority
+          <select name="priority" id="task-priority"></select>
+        </label>
+        <label>Due <span class="zone-hint" data-zone-hint></span>
+          <input name="due" type="datetime-local" step="1">
+        </label>
+      </div>
+
+      <!-- Containment only: which action from the catalog, and its hint -->
+      <div id="task-action-type-row">
+        <label>Containment action
+          <select name="actionType" id="task-action-type"></select>
+        </label>
+        <div id="task-hint" class="hint-box" hidden></div>
+      </div>
+
+      <!-- Targets: hosts / accounts / values, added one at a time as chips -->
+      <label>Targets (hosts, accounts, IPs...)
+        <span class="chip-input">
+          <span id="task-targets" class="chips"></span>
+          <input id="task-target-input" data-asset-picker placeholder="Pick from Assets or type, then Enter">
+          <button type="button" class="btn btn-small" id="task-target-add">Add</button>
+        </span>
+      </label>
+
+      <div class="form-row form-row-2">
+        <label>Owner
+          <select name="owner" id="task-owner"></select>
+        </label>
+        <label>Owner name (optional)
+          <!-- Pick list of the IR team & contacts (Client tab) -->
+          <input name="ownerName" list="task-people" autocomplete="off" placeholder="Dana Reyes">
+        </label>
+      </div>
+
+      <div class="form-row form-row-2">
+        <label>Status
+          <select name="status" id="task-status"></select>
+        </label>
+        <label id="task-reason-field">Reason
+          <input name="statusReason" placeholder="Waiting on the client's network team">
+        </label>
+      </div>
+
+      <fieldset>
+        <legend id="task-approval-legend">Approval</legend>
+        <div class="form-row">
+          <label>Approved by
+            <input name="approvalBy" list="task-people" autocomplete="off" placeholder="Dana Reyes">
+          </label>
+          <label>Approved at <span class="zone-hint" data-zone-hint></span>
+            <input name="approvalAt" type="datetime-local" step="1">
+          </label>
+          <label>How
+            <select name="approvalMethod" id="task-approval-method"></select>
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="form-row form-row-2" id="task-done-fields">
+        <label>Done by
+          <input name="doneBy" placeholder="Filled in automatically">
+        </label>
+        <label>Done at <span class="zone-hint" data-zone-hint></span>
+          <input name="doneAt" type="datetime-local" step="1">
+        </label>
+      </div>
+
+      <label>Notes
+        <textarea name="notes" rows="2" placeholder="Evidence preserved first? Ticket number? Anything to remember."></textarea>
+      </label>
+
+      <!-- Names from the Client tab's IR team & contacts -->
+      <datalist id="task-people"></datalist>
+
+      <p id="task-error" class="error"></p>
+
+      <div class="form-buttons">
+        <button type="button" id="task-delete" class="btn btn-danger" hidden>Delete</button>
+        <span class="spacer"></span>
+        <button type="button" id="task-cancel" class="btn">Cancel</button>
+        <button type="submit" id="task-submit" class="btn btn-primary">Add</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- ADD / EDIT ASSET POP-UP. Used by tabs/assets.js. -->
   <dialog id="asset-dialog">
     <form id="asset-form">
@@ -404,7 +511,8 @@
       <button class="tab active" data-tab="client">Client</button>
       <button class="tab" data-tab="summary">Summary and Reports</button>
       <button class="tab" data-tab="storyline">Storyline</button>
-      <button class="tab" data-tab="tasks">Tasks</button>
+      <!-- Label "Action Items" (+ open count, set by app.js); key stays "tasks" -->
+      <button class="tab" data-tab="tasks">Action Items</button>
       <button class="tab" data-tab="evidence">Evidence</button>
       <button class="tab" data-tab="iocs">IOCs</button>
       <button class="tab" data-tab="assets">Assets</button>
@@ -436,6 +544,14 @@
   <script src="core/ioc.js"></script>
   <script src="core/export.js"></script>
   <script src="core/pickers.js"></script>
+  <!-- Built-in PowerShell scripts (adtriage, Invoke-TriageCheck) as base64,
+       generated by tools/update-scripts.ps1. Used by the Client tab. -->
+  <script src="core/scripts.js"></script>
+  <!-- Saving cases to folders on disk (autosave) -->
+  <script src="core/storage.js"></script>
+  <!-- The add / edit action item pop-up, shared by the Action Items tab
+       and the Containment Strategy (Summary and Reports) -->
+  <script src="core/taskform.js"></script>
   <script src="core/sidebar.js"></script>
   <script src="tabs/client.js"></script>
   <script src="tabs/summary.js"></script>

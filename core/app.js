@@ -128,8 +128,17 @@ for (const button of tabButtons) {
 App.render = function () {
   App.renderSidebar();
   renderCaseHeader();
+  updateTabLabels();
   renderTab(currentTab);
 };
+
+// Tab buttons that show a live count, e.g. "Action Items (5 open)".
+function updateTabLabels() {
+  const c = App.getSelectedCase();
+  const open = c ? c.tasks.filter(App.taskIsOpen).length : 0;
+  document.querySelector('[data-tab="tasks"]').textContent =
+    "Action Items" + (open ? " (" + open + " open)" : "");
+}
 
 // Redraw only the sidebar and the case header, NOT the current tab.
 // Used while typing (e.g. the client name), so the box you're typing
@@ -144,6 +153,7 @@ App.renderChrome = function () {
 App.loadSettings();
 App.setupDisplayZone();
 App.setupAssetPickers();     // any box with data-asset-picker gets the asset list
+App.taskForm.setup();        // the shared add / edit action item pop-up
 App.setupNewCaseForm();
 
 // Some tabs have a one-time setup() (e.g. wiring up a pop-up form).
@@ -156,3 +166,7 @@ for (const name in App.tabs) {
 }
 showTab("client");
 App.render();
+
+// Connect to the cases folder used last time (if any) and start
+// autosaving. It's async (it may read case files), so it runs on its own.
+App.storage.init();

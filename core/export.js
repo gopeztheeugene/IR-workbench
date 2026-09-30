@@ -38,9 +38,11 @@ App.safeFileName = function (text) {
 // Make the browser download some text as a file (goes to Downloads).
 // "\uFEFF" at the start is a marker (BOM) that tells Excel the file
 // is UTF-8, so characters like é or ü show correctly.
-App.downloadText = function (fileName, text) {
+// mimeType is optional: CSV unless told otherwise (e.g. "text/plain").
+// The BOM also helps Windows PowerShell 5.1 read a downloaded .ps1 as UTF-8.
+App.downloadText = function (fileName, text, mimeType) {
   // A Blob is a chunk of file data held in memory.
-  const blob = new Blob(["\uFEFF" + text], { type: "text/csv;charset=utf-8" });
+  const blob = new Blob(["\uFEFF" + text], { type: mimeType || "text/csv;charset=utf-8" });
   // Give the Blob a temporary URL, then "click" a hidden download link.
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -181,4 +183,46 @@ App.linkFor = function (text) {
     return t;
   }
   return App.pathToFileUrl(t);
+};
+
+// ---------------------------------------------------------------
+// Hashing
+// ---------------------------------------------------------------
+
+// The SHA-256 of a file (or any Blob) as a 64-character hex string.
+// Python: hashlib.sha256(open(path, "rb").read()).hexdigest()
+// Reads the whole file into memory, so callers skip very large files.
+App.sha256Hex = async function (file) {
+  const bytes = await file.arrayBuffer();                        // raw bytes
+  const digest = await crypto.subtle.digest("SHA-256", bytes);   // Web Crypto
+  // Each byte -> 2 hex characters (255 -> "ff", 7 -> "07"), joined.
+  return Array.from(new Uint8Array(digest))
+    .map(function (b) { return b.toString(16).padStart(2, "0"); })
+    .join("");
+};
+
+// ---------------------------------------------------------------
+// Built-in PowerShell scripts (App.SCRIPTS, from core/scripts.js)
+// ---------------------------------------------------------------
+
+// Is this script built in? (core/scripts.js might be missing or old.)
+App.hasScript = function (key) {
+  return Boolean(App.SCRIPTS && App.SCRIPTS[key]);
+};
+
+// The script's text, decoded from base64. atob() turns base64 into raw
+// bytes (as a "binary string"); TextDecoder reads those bytes as UTF-8.
+// Python: base64.b64decode(b64).decode("utf-8")
+App.scriptText = function (key) {
+  const binary = atob(App.SCRIPTS[key].b64);
+  const bytes = Uint8Array.from(binary, function (ch) { return ch.charCodeAt(0); });
+  return new TextDecoder("utf-8").decode(bytes);
+};
+
+// The whole script as ONE line of PowerShell: decode the base64 and run
+// it with iex (Invoke-Expression). Safe to paste into a remote shell,
+// because there are no line breaks to get mangled.
+App.scriptOneLiner = function (key) {
+  return 'iex ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("' +
+         App.SCRIPTS[key].b64 + '")))';
 };

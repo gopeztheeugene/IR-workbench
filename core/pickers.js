@@ -1,4 +1,4 @@
-// pickers.js - reusable form helpers.
+// pickers.js - reusable form helpers: pick lists for text boxes.
 //
 // ASSET PICK LIST
 // Any text box marked with data-asset-picker gets a drop-down list of
@@ -11,19 +11,27 @@
 //
 //   <input name="user" data-asset-picker="account,service-account,mailbox">
 //
+// IOC PICK LIST
+// A text box marked with data-ioc-picker lists the case's IOCs instead
+// (the real values, e.g. for a firewall deny rule):
+//
+//   <input name="target" data-ioc-picker>
+//
+// A form can switch one box between the two by swapping the attribute.
+//
 // How it works: one listener on the whole page notices when ANY text
-// box gets focus. If that box has data-asset-picker, the list is
-// (re)built right then, so it always shows the current assets. This
-// also works for boxes a tab draws later with innerHTML.
+// box gets focus. If that box has one of the attributes, its list is
+// (re)built right then, so it always shows the current data. This also
+// works for boxes a tab draws later with innerHTML.
 
 // Build or refresh the pick list for one text box.
-App.refreshAssetPicker = function (input) {
+App.refreshPicker = function (input) {
   // First time: create a <datalist> right after the box and connect it
   // with list="...". Each gets its own id, e.g. "asset-picker-3".
   if (!input.getAttribute("list")) {
-    App.assetPickerCount = (App.assetPickerCount || 0) + 1;
+    App.pickerCount = (App.pickerCount || 0) + 1;
     const list = document.createElement("datalist");
-    list.id = "asset-picker-" + App.assetPickerCount;
+    list.id = "asset-picker-" + App.pickerCount;
     input.after(list);                          // put it right after the box
     input.setAttribute("list", list.id);
     input.setAttribute("autocomplete", "off");  // no browser history mixed in
@@ -36,7 +44,12 @@ App.refreshAssetPicker = function (input) {
     return;
   }
 
-  // Optional type filter: "account,mailbox" -> ["account", "mailbox"].
+  if (input.hasAttribute("data-ioc-picker")) {
+    list.innerHTML = App.iocDatalistHtml(caseObj);
+    return;
+  }
+
+  // Optional asset type filter: "account,mailbox" -> ["account", "mailbox"].
   // An empty value means "all types".
   const filter = (input.dataset.assetPicker || "")
     .split(",")
@@ -46,16 +59,20 @@ App.refreshAssetPicker = function (input) {
   list.innerHTML = App.assetDatalistHtml(caseObj, filter);
 };
 
+// Old name, kept so nothing breaks.
+App.refreshAssetPicker = App.refreshPicker;
+
 // Runs once at startup (called from app.js).
 // "focusin" fires whenever any element on the page gets focus; we only
-// act when it's a box marked data-asset-picker. (Listening once on the
-// whole document like this is called "event delegation".)
+// act when it's a box marked data-asset-picker or data-ioc-picker.
+// (Listening once on the whole document like this is called "event
+// delegation".)
 App.setupAssetPickers = function () {
   document.addEventListener("focusin", function (event) {
     const input = event.target;
     // .matches(selector) asks "does this element fit this CSS selector?"
-    if (input.matches("input[data-asset-picker]")) {
-      App.refreshAssetPicker(input);
+    if (input.matches("input[data-asset-picker], input[data-ioc-picker]")) {
+      App.refreshPicker(input);
     }
   });
 };

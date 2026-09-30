@@ -20,7 +20,12 @@ const App = {
     // Which time zone every tab shows times in (the sidebar's
     // "Show times in"). Times are always SAVED in UTC; this only
     // changes the display. Remembered in localStorage (see below).
-    displayTimeZone: "UTC"
+    displayTimeZone: "UTC",
+
+    // Is the Containment Strategy's Assumptions box open? Starts closed
+    // every time the app opens (NOT saved), and stays open while you work
+    // in it, so adding an assumption (which redraws) doesn't fold it away.
+    assumptionsOpen: false
   },
 
   // Each tab file adds itself here, e.g. App.tabs.client = { ... }.
@@ -155,6 +160,21 @@ App.TLP_LEVELS = [
   { key: "red",          label: "TLP:RED" }
 ];
 
+// Summary and Reports: how the incident was detected. "other" shows a
+// "specify" box (saved in summary.detectionSourceOther).
+App.DETECTION_SOURCES = [
+  { key: "",            label: "Not set" },
+  { key: "sentinelone", label: "SentinelOne" },
+  { key: "defender",    label: "Microsoft Defender" },
+  { key: "sentinel",    label: "Microsoft Sentinel" },
+  { key: "fortiedr",    label: "FortiEDR" },
+  { key: "fortisiem",   label: "FortiSIEM" },
+  { key: "elastic",     label: "Elastic" },
+  { key: "saas-alerts", label: "SaaS Alerts" },
+  { key: "threat-hunt", label: "Threat hunt" },
+  { key: "other",       label: "Other (specify)" }
+];
+
 // Choices for the Client tab. "" = not set yet.
 App.CLIENT_CHOICES = {
   edr: [
@@ -282,15 +302,35 @@ App.addCase = function (caseData) {
     return validTypes.includes(key);   // like: key in valid_types
   });
 
-  // Build the case object with defaults for anything left out.
-  const newCase = {
+  // Start from the defaults, then fill in what was given.
+  // Object.assign(a, b) copies b's fields over a, like Python's a.update(b).
+  const newCase = Object.assign(App.caseDefaults(), {
     id: id,
     title: (caseData.title || "").trim(),
     client: (caseData.client || "").trim(),
     types: types,                               // list of type keys
     severity: caseData.severity || "medium",
     status: caseData.status || "open",
-    opened: caseData.opened || App.todayString(),
+    opened: caseData.opened || App.todayString()
+  });
+
+  App.state.cases.push(newCase);   // like Python's list.append()
+  console.log("Case added:", newCase);
+  return null;
+};
+
+// Every field a case has, with its starting value. Used for new cases
+// AND to fill in fields missing from cases saved by an older version
+// of the app (App.upgradeCase). Add new case fields HERE.
+App.caseDefaults = function () {
+  return {
+    id: "",
+    title: "",
+    client: "",
+    types: [],                // list of case type keys
+    severity: "medium",
+    status: "open",
+    opened: App.todayString(),
 
     // Evidence entries for this case (see App.addEvidence below).
     evidence: [],
@@ -312,12 +352,510 @@ App.addCase = function (caseData) {
     nextIocNumber: 1,
 
     // Everything on the Client tab (see App.newClientInfo below).
-    clientInfo: App.newClientInfo()
+    clientInfo: App.newClientInfo(),
+
+    // Action Items (tab key "tasks"): containment / recovery actions and
+    // ad-hoc action items, all in one list. TK-001, TK-002, ...
+    // Closed items (done / not needed) are kept, never deleted.
+    tasks: [],
+    nextTaskNumber: 1,
+
+    // Summary and Reports tab: incident summary + impact assessment.
+    summary: {
+      detectedAt: "",          // UTC
+      detectionSource: "",       // a key from App.DETECTION_SOURCES
+      detectionSourceOther: "",  // the "specify" text when detectionSource is "other"
+      overview: "",
+      // NIST SP 800-61 impact categories (keys from App.IMPACT).
+      impact: {
+        functional: "",
+        functionalNotes: "",
+        // Information impact: several can apply, so one true/false each.
+        information: { none: false, privacy: false, proprietary: false, integrity: false },
+        informationNotes: "",
+        recoverability: "",
+        recoverabilityNotes: "",
+        updatedAt: ""          // UTC, set automatically when the assessment changes
+      },
+      // Containment Strategy: the PLAN around the containment actions.
+      // (The actions themselves are containment items in case.tasks.)
+      containment: {
+        assumptions: [],       // { id: "AN-001", text, basis, source: "manual" | suggestion key }
+        nextAssumptionNumber: 1,
+        dismissedSuggestions: [],   // suggestion keys the user dismissed
+        // (Older files may also have a "checklist" object from the removed
+        // pre-containment checklist. It's ignored.)
+        // Notes under the containment window. (Named checklistNotes for
+        // older files; it's just "Notes" on screen.)
+        checklistNotes: "",
+        windowStart: ""        // UTC. Also the default due time of containment items.
+      }
+    }
+  };
+};
+
+// Set a nested field by its "path", e.g. setPath(obj, "impact.functional", "high")
+// is like Python's obj["impact"]["functional"] = "high". Only EXISTING
+// fields can be set, so a typo can't create junk keys. Returns true if set.
+App.setPath = function (obj, path, value) {
+  const keys = path.split(".");                  // "impact.functional" -> ["impact", "functional"]
+  for (let i = 0; i < keys.length - 1; i++) {    // walk down to the parent object
+    obj = obj[keys[i]];
+    if (typeof obj !== "object" || obj === null) {
+      return false;
+    }
+  }
+  const last = keys[keys.length - 1];
+  if (!(last in obj)) {                          // "in" = Python's "key in dict"
+    console.warn("Unknown field:", path);
+    return false;
+  }
+  obj[last] = value;
+  return true;
+};
+
+// Set a Summary and Reports field, e.g. ("INC-1", "impact.functional", "high").
+// Any change to the impact assessment also stamps impact.updatedAt.
+App.setSummaryField = function (caseId, path, value) {
+  const c = App.findCase(caseId);
+  if (c === null || !App.setPath(c.summary, path, value)) {
+    return false;
+  }
+  if (path.startsWith("impact.")) {
+    c.summary.impact.updatedAt = App.time.nowUtc();
+  }
+  return true;
+};
+
+// ---------------------------------------------------------------
+// Action items (tab label "Action Items", key and data name "tasks")
+// ---------------------------------------------------------------
+//
+// An action item looks like:
+//   { id: "TK-001", kind: "containment", title: "Isolate ACME-WS114",
+//     targets: ["ACME-WS114"], priority: "p1", owner: "msp", ownerName: "",
+//     due: "2026-09-30T15:00:00",                    // UTC, or ""
+//     status: "done", statusReason: "",             // reason for blocked / not needed
+//     approval: { by: "Dana Reyes", at: "...", method: "call" },
+//     doneBy: "Thrive", doneAt: "...",              // set automatically on Done
+//     notes: "", createdAt: "..." }
+
+App.TASK_KINDS = [
+  { key: "containment", label: "Containment" },
+  { key: "recovery",    label: "Recovery" },
+  { key: "task",        label: "General" }     // any other follow-up / to-do
+];
+
+// "open" = still needs doing. Done / Not needed = closed (kept for the record).
+App.TASK_STATUSES = [
+  { key: "planned",     label: "Planned",     open: true },
+  { key: "approved",    label: "Approved",    open: true },
+  { key: "in-progress", label: "In progress", open: true },
+  { key: "blocked",     label: "Blocked",     open: true },
+  { key: "done",        label: "Done",        open: false },
+  { key: "not-needed",  label: "Not needed",  open: false }
+];
+
+App.TASK_PRIORITIES = [
+  { key: "p1", label: "P1 – Critical" },
+  { key: "p2", label: "P2 – High" },
+  { key: "p3", label: "P3 – Medium" },
+  { key: "p4", label: "P4 – Low" }
+];
+
+// Who does it: me, or one of the same sides as the IR team list.
+App.TASK_OWNERS = [{ key: "me", label: "Me" }].concat(App.PERSON_SIDES);
+
+App.APPROVAL_METHODS = [
+  { key: "",          label: "Not set" },
+  { key: "call",      label: "Call" },
+  { key: "email",     label: "Email" },
+  { key: "teams",     label: "Teams / chat" },
+  { key: "ticket",    label: "Ticket" },
+  { key: "in-person", label: "In person" },
+  { key: "other",     label: "Other" }
+];
+
+// Is this action item still open?
+App.taskIsOpen = function (t) {
+  const s = App.TASK_STATUSES.find(function (x) { return x.key === t.status; });
+  return s ? s.open : true;
+};
+
+// Does this action item have a complete approval (who, when, how)?
+App.taskHasApproval = function (t) {
+  return Boolean(t.approval && t.approval.by && t.approval.at && t.approval.method);
+};
+
+// The rules for action item fields (shared by add and update).
+// Returns { error: "..." } or { fields: {...} }.
+App.cleanTask = function (taskData) {
+  const title = (taskData.title || "").trim();
+  if (title === "") {
+    return { error: "Describe the action." };
+  }
+  const keysOf = function (list) { return list.map(function (x) { return x.key; }); };
+  const pick = function (value, list, fallback) { return keysOf(list).includes(value) ? value : fallback; };
+
+  const kind = pick(taskData.kind, App.TASK_KINDS, "task");
+  // Action type (catalog) only applies to containment items.
+  const actionType = kind === "containment" ? pick(taskData.actionType, App.CONTAINMENT_ACTIONS, "") : "";
+  const status = pick(taskData.status, App.TASK_STATUSES, "planned");
+  const statusReason = (taskData.statusReason || "").trim();
+  const a = taskData.approval || {};
+  const approval = {
+    by: (a.by || "").trim(),
+    at: App.time.withSeconds((a.at || "").trim()),
+    method: pick(a.method, App.APPROVAL_METHODS, "")
   };
 
-  App.state.cases.push(newCase);   // like Python's list.append()
-  console.log("Case added:", newCase);
+  // Status rules.
+  if (status === "approved" && kind === "containment" && !App.taskHasApproval({ approval: approval })) {
+    return { error: "To mark a containment action Approved, record who approved it, when, and how." };
+  }
+  if (status === "blocked" && statusReason === "") {
+    return { error: "Say what it's blocked on (waiting on ...)." };
+  }
+  if (status === "not-needed" && statusReason === "") {
+    return { error: "Give the reason it's not needed." };
+  }
+
+  // Targets: a list of hosts / accounts / values, no blanks or repeats.
+  const targets = [];
+  for (const t of taskData.targets || []) {
+    const v = String(t).trim();
+    if (v !== "" && !targets.includes(v)) {
+      targets.push(v);
+    }
+  }
+
+  const owner = pick(taskData.owner, App.TASK_OWNERS, "me");
+  const ownerName = (taskData.ownerName || "").trim();
+
+  // Done: stamp the time (and "done by") automatically if not given.
+  // Not done: no done time (e.g. when a task is reopened).
+  let doneAt = "";
+  let doneBy = "";
+  if (status === "done") {
+    doneBy = (taskData.doneBy || "").trim();
+    doneAt = App.time.withSeconds((taskData.doneAt || "").trim()) || App.time.nowUtc();
+    if (doneBy === "") {
+      doneBy = ownerName || App.labelFor(App.TASK_OWNERS, owner);
+    }
+  }
+
+  return {
+    fields: {
+      kind: kind,
+      actionType: actionType,
+      title: title,
+      targets: targets,
+      priority: pick(taskData.priority, App.TASK_PRIORITIES, "p3"),
+      owner: owner,
+      ownerName: ownerName,
+      due: App.time.withSeconds((taskData.due || "").trim()),
+      status: status,
+      statusReason: statusReason,
+      approval: approval,
+      doneBy: doneBy,
+      doneAt: doneAt,
+      notes: (taskData.notes || "").trim()
+    }
+  };
+};
+
+// Add an action item. Returns { error } or { id } (the new ID).
+App.addTask = function (caseId, taskData) {
+  const c = App.findCase(caseId);
+  if (c === null) {
+    return { error: "No case with ID " + caseId + "." };
+  }
+  const result = App.cleanTask(taskData);
+  if (result.error) {
+    return result;
+  }
+  const id = "TK-" + String(c.nextTaskNumber).padStart(3, "0");
+  // "auto": set on items the app creates by itself, e.g.
+  // "preserve-evidence:AS-001" (see App.addPreservationTask). "" = added by hand.
+  c.tasks.push({ id: id, ...result.fields, auto: taskData.auto || "", createdAt: App.time.nowUtc() });
+  c.nextTaskNumber = c.nextTaskNumber + 1;
+  return { id: id };
+};
+
+App.findTask = function (caseId, taskId) {
+  const c = App.findCase(caseId);
+  if (c === null) {
+    return null;
+  }
+  return c.tasks.find(function (t) { return t.id === taskId; }) || null;
+};
+
+// Change an action item. Returns null if it worked, or an error message.
+App.updateTask = function (caseId, taskId, taskData) {
+  const t = App.findTask(caseId, taskId);
+  if (t === null) {
+    return "No action item " + taskId + ".";
+  }
+  const result = App.cleanTask(taskData);
+  if (result.error) {
+    return result.error;
+  }
+  Object.assign(t, result.fields);
   return null;
+};
+
+// Only for mistakes: closed items are normally kept, not deleted.
+App.deleteTask = function (caseId, taskId) {
+  const c = App.findCase(caseId);
+  if (c !== null) {
+    c.tasks = c.tasks.filter(function (t) { return t.id !== taskId; });
+  }
+};
+
+// ---------------------------------------------------------------
+// Containment Strategy (Summary and Reports)
+// ---------------------------------------------------------------
+
+// The containment action catalog. "targets" says what the targets box
+// picks from: "assets" (hosts / accounts) or "iocs" (the IOCs tab).
+// "hint" = what to do BEFORE the action (shown as "Before you do this").
+App.CONTAINMENT_ACTIONS = [
+  { key: "disable-accounts", label: "Disable accounts / block sign-in", targets: "assets",
+    hint: "Pair it with a password reset and Revoke sessions. For BEC also check inbox rules, forwarding, OAuth app consents, and registered MFA methods / devices: they survive a reset." },
+  { key: "revoke-sessions", label: "Revoke sessions", targets: "assets",
+    hint: "Do it AFTER disabling or resetting the account, or the attacker just signs in again. Access tokens can stay valid for about an hour unless Continuous Access Evaluation (CAE) is on." },
+  { key: "reset-credentials", label: "Reset credentials (privileged / service accounts, krbtgt ×2)", targets: "assets",
+    hint: "krbtgt: reset TWICE, with replication (ideally the 10-hour ticket lifetime) in between. Update service account passwords where they're used, or services break. Treat the Entra Connect server as tier 0." },
+  { key: "isolate-edr", label: "Isolate host (EDR / Binalyze)", targets: "assets",
+    hint: "Isolation keeps the machine on, so memory is preserved. Capture triage / memory (Binalyze) BEFORE anyone reboots or reimages." },
+  { key: "kill-process", label: "Kill process", targets: "assets",
+    hint: "Dump the process FIRST (ProcDump / Binalyze). Record the command line, parent process, and hash. Check persistence, or it may just restart." },
+  { key: "hypervisor-isolation", label: "Hypervisor / cloud isolation (VM, AWS SG, Azure NSG)", targets: "assets",
+    hint: "Snapshot the VM first. AWS security groups are stateful: swapping one doesn't cut open connections, so add a network ACL (NACL) deny and remove / revoke the instance's IAM role." },
+  { key: "network-segmentation", label: "Network segmentation (VLAN / ACL / firewall between segments)", targets: "assets",
+    hint: "Keep a path open for your IR tooling (EDR and Binalyze consoles) and log forwarding, so you don't cut off your own visibility." },
+  { key: "block-lateral", label: "Block lateral movement (PsExec, SMB, WinRM, WMI, RDP)", targets: "assets",
+    hint: "Use GPO, host firewall, or EDR / ASR rules. Keep a path for your jump host, EDR, and Binalyze so you don't lock yourself out." },
+  { key: "disable-vpn", label: "Disable SSL-VPN (if it's the entry point)", targets: "assets",
+    hint: "Export the VPN logs FIRST: FortiGate logs roll over quickly. Plan how remote staff will work without it." },
+  { key: "fw-deny", label: "Firewall deny rule", targets: "iocs",
+    hint: "Turn on logging for the rule: blocked connection attempts reveal hosts that are still infected." },
+  { key: "sinkhole", label: "Sinkhole domain", targets: "iocs",
+    hint: "Watch the queries to the sinkhole: they show which hosts are still infected. Malware with hard-coded IPs or DNS-over-HTTPS bypasses it." },
+  { key: "block-iocs", label: "Block IOCs (EDR / email gateway / proxy)", targets: "iocs",
+    hint: "Block in every control that applies (EDR, email gateway, proxy, firewall), and note where each was blocked." },
+  { key: "purge-emails", label: "Purge emails", targets: "assets",
+    hint: "Export a copy of the phishing email FIRST (it's evidence). Record the message IDs and how many copies were purged." },
+  { key: "remove-inbox-rules", label: "Remove malicious inbox / forwarding rules", targets: "assets",
+    hint: "Export the rules FIRST (Get-InboxRule). Also check mailbox forwarding, transport rules, and other mailboxes for similar rules." },
+  { key: "remove-app-consents", label: "Remove malicious app consent registrations", targets: "assets",
+    hint: "Record the app ID, its permissions, and when it was consented FIRST, then revoke. Check whether other users consented too." },
+  { key: "protect-backups", label: "Protect backups (take offline / isolate)", targets: "assets",
+    hint: "Do it EARLY in a ransomware case. Confirm the last good restore point and that the backup server / NAS isn't reachable with domain credentials." },
+  { key: "other", label: "Other (custom action)", targets: "assets", hint: "" }
+];
+
+// ---- Evidence preservation: one action item per affected asset ----
+
+// What to preserve, by asset type (goes in the item's notes).
+App.PRESERVATION_NOTES = {
+  host: "Triage + memory capture (Binalyze) BEFORE isolation, reboot, or reimage. VM snapshot if it's virtual.",
+  server: "Triage + memory capture (Binalyze) BEFORE isolation, reboot, or reimage. VM snapshot if it's virtual. Export event logs before they roll over.",
+  account: "Export sign-in and audit logs (Entra ID / AD) before they age out. Record MFA methods and registered devices.",
+  "service-account": "Export AD security logs (4624 / 4625 / 4768 / 4769) for the account, and where it's used, before they roll over.",
+  mailbox: "Export the mailbox audit log, inbox / forwarding rules, and a message trace. Keep a copy of malicious emails before purging.",
+  cloud: "Export activity / audit logs and snapshot the resource before changing it.",
+  "network-device": "Export logs and the running config before they roll over or the device is changed.",
+  other: "Collect and hash what proves the compromise before anything is changed."
+};
+
+// The "auto" marker for an asset's preservation item.
+App.preservationKey = function (assetId) {
+  return "preserve-evidence:" + assetId;
+};
+
+// Is this one of the automatic evidence preservation items?
+App.isPreservationTask = function (t) {
+  return String(t.auto || "").startsWith("preserve-evidence:");
+};
+
+// Add a "Preserve evidence on <asset>" action item, unless the asset
+// already has one (open or closed) or is marked clean. Called when an
+// asset is added (by hand or from Evidence), so the tabs never have to.
+App.addPreservationTask = function (caseId, asset) {
+  const c = App.findCase(caseId);
+  if (c === null || asset.status === "clean") {
+    return;
+  }
+  const key = App.preservationKey(asset.id);
+  if (c.tasks.some(function (t) { return t.auto === key; })) {
+    return;
+  }
+  App.addTask(caseId, {
+    kind: "task",
+    title: "Preserve evidence on " + asset.name,
+    targets: [asset.name],
+    priority: "p1",
+    owner: "me",
+    status: "planned",
+    notes: App.PRESERVATION_NOTES[asset.type] || App.PRESERVATION_NOTES.other,
+    auto: key
+  });
+};
+
+// How far along evidence preservation is: { total, open }.
+// (Shared by the Containment Strategy and the Action Items banner.)
+App.preservationProgress = function (caseObj) {
+  const items = caseObj.tasks.filter(App.isPreservationTask);
+  return { total: items.length, open: items.filter(App.taskIsOpen).length };
+};
+
+// An action item's due time: its own, or, for OPEN containment items
+// without one, the containment window (everything happens together).
+// Returns { due: "UTC text" or "", fromWindow: true / false }.
+App.taskDue = function (caseObj, t) {
+  if (t.due) {
+    return { due: t.due, fromWindow: false };
+  }
+  const windowStart = caseObj.summary.containment.windowStart;
+  if (t.kind === "containment" && windowStart && App.taskIsOpen(t)) {
+    return { due: windowStart, fromWindow: true };
+  }
+  return { due: "", fromWindow: false };
+};
+
+// ---- Assumptions ----
+
+App.addAssumption = function (caseId, data) {
+  const plan = App.findCase(caseId).summary.containment;
+  const id = "AN-" + String(plan.nextAssumptionNumber).padStart(3, "0");
+  plan.assumptions.push({ id: id, text: (data.text || "").trim(), basis: (data.basis || "").trim(),
+                          source: data.source || "manual" });
+  plan.nextAssumptionNumber = plan.nextAssumptionNumber + 1;
+  return id;
+};
+
+App.updateAssumption = function (caseId, id, key, value) {
+  const a = App.findCase(caseId).summary.containment.assumptions.find(function (x) { return x.id === id; });
+  if (a && (key === "text" || key === "basis")) {
+    a[key] = value;
+  }
+};
+
+App.deleteAssumption = function (caseId, id) {
+  const plan = App.findCase(caseId).summary.containment;
+  plan.assumptions = plan.assumptions.filter(function (x) { return x.id !== id; });
+};
+
+App.dismissSuggestion = function (caseId, key) {
+  const plan = App.findCase(caseId).summary.containment;
+  if (!plan.dismissedSuggestions.includes(key)) {
+    plan.dismissedSuggestions.push(key);
+  }
+};
+
+// NIST SP 800-61 Rev. 2 incident impact categories (Tables 3-2, 3-3, 3-4).
+// "level" 0-3 is only for coloring (green -> red).
+App.IMPACT = {
+  functional: [
+    { key: "none",   level: 0, label: "None",
+      description: "No effect to the organization's ability to provide all services to all users." },
+    { key: "low",    level: 1, label: "Low",
+      description: "Minimal effect; the organization can still provide all critical services to all users but has lost efficiency." },
+    { key: "medium", level: 2, label: "Medium",
+      description: "The organization has lost the ability to provide a critical service to a subset of system users." },
+    { key: "high",   level: 3, label: "High",
+      description: "The organization is no longer able to provide some critical services to any users." }
+  ],
+  information: [
+    { key: "none",        level: 0, label: "None",
+      description: "No information was exfiltrated, changed, deleted, or otherwise compromised." },
+    { key: "privacy",     level: 3, label: "Privacy breach",
+      description: "Sensitive personally identifiable information (PII) was accessed or exfiltrated." },
+    { key: "proprietary", level: 3, label: "Proprietary breach",
+      description: "Proprietary information (e.g. intellectual property, protected infrastructure information) was accessed or exfiltrated." },
+    { key: "integrity",   level: 3, label: "Integrity loss",
+      description: "Sensitive or proprietary information was changed or deleted." }
+  ],
+  recoverability: [
+    { key: "regular",         level: 0, label: "Regular",
+      description: "Time to recovery is predictable with existing resources." },
+    { key: "supplemented",    level: 1, label: "Supplemented",
+      description: "Time to recovery is predictable with additional resources." },
+    { key: "extended",        level: 2, label: "Extended",
+      description: "Time to recovery is unpredictable; additional resources and outside help are needed." },
+    { key: "not-recoverable", level: 3, label: "Not recoverable",
+      description: "Recovery from the incident is not possible (e.g. sensitive data exfiltrated and posted publicly); launch an investigation." }
+  ]
+};
+
+// Fill in any field that's missing from "target", using "defaults".
+// Goes inside nested objects too (e.g. clientInfo.backups). Lists and
+// existing values are never touched. Like Python's dict.setdefault(),
+// applied all the way down.
+App.fillDefaults = function (target, defaults) {
+  function isObject(v) {
+    return v !== null && typeof v === "object" && !Array.isArray(v);
+  }
+  for (const key of Object.keys(defaults)) {
+    if (target[key] === undefined) {
+      target[key] = defaults[key];
+    } else if (isObject(target[key]) && isObject(defaults[key])) {
+      App.fillDefaults(target[key], defaults[key]);
+    }
+  }
+  return target;
+};
+
+// Make a case loaded from disk safe to use with this version of the app:
+// add any missing fields, and make sure every ID counter is above the
+// highest ID in use (so a new EV-/AS-/ST-/IOC-... ID is never reused).
+App.upgradeCase = function (c) {
+  App.fillDefaults(c, App.caseDefaults());
+
+  // [the object, its list, its counter]
+  const counters = [
+    [c, "evidence", "nextEvidenceNumber"],
+    [c, "assets", "nextAssetNumber"],
+    [c, "storyline", "nextStoryNumber"],
+    [c, "iocs", "nextIocNumber"],
+    [c, "tasks", "nextTaskNumber"],
+    [c.summary.containment, "assumptions", "nextAssumptionNumber"],
+    [c.clientInfo, "people", "nextPersonNumber"],
+    [c.clientInfo, "criticalAssets", "nextCriticalNumber"]
+  ];
+  for (const [owner, listKey, counterKey] of counters) {
+    let highest = 0;
+    for (const item of owner[listKey]) {
+      // "EV-004" -> 4. parseInt reads the number after the last "-".
+      const n = parseInt(String(item.id).split("-").pop(), 10);
+      if (n > highest) {
+        highest = n;
+      }
+    }
+    owner[counterKey] = Math.max(owner[counterKey] || 1, highest + 1);
+  }
+
+  // Fields added to list items later (lists aren't filled by fillDefaults).
+  for (const t of c.tasks) {
+    if (t.actionType === undefined) {
+      t.actionType = "";
+    }
+    if (t.auto === undefined) {
+      t.auto = "";
+    }
+  }
+
+  // Schema 2: detection source was free text, now it's a dropdown key.
+  // Old text that isn't a known key moves into "Other (specify)".
+  // (Safe to run on new files too: a known key is left alone.)
+  const s = c.summary;
+  const known = App.DETECTION_SOURCES.some(function (d) { return d.key === s.detectionSource; });
+  if (!known) {
+    s.detectionSourceOther = s.detectionSource;
+    s.detectionSource = "other";
+  }
+  return c;
 };
 
 // Mark a case as the one that's open. Returns true if found.
@@ -456,6 +994,18 @@ App.updateEvidence = function (caseId, evidenceId, evidenceData) {
     App.linkEvidenceToAsset(caseId, evidenceId, ev.host);
   }
   return null;
+};
+
+// Record that a local evidence file was copied into the case folder.
+// info = { path: "evidence/EV-004_x.eml", verified: true/false/null,
+//          copiedAt: "2026-09-30T14:05:02" (UTC) }
+// verified: true = the copy's SHA-256 matches, false = it does NOT,
+// null = not checked (file too large to hash in the browser).
+App.setEvidenceCopy = function (caseId, evidenceId, info) {
+  const ev = App.findEvidence(caseId, evidenceId);
+  if (ev !== null) {
+    ev.storedCopy = info;
+  }
 };
 
 // Find one evidence entry in a case. Returns it, or null.
@@ -627,6 +1177,8 @@ App.addAsset = function (caseId, assetData) {
   c.assets.push(asset);
   c.nextAssetNumber = c.nextAssetNumber + 1;
   console.log("Asset added to", caseId + ":", asset);
+  // Every affected asset gets a "Preserve evidence" action item.
+  App.addPreservationTask(caseId, asset);
   return null;
 };
 
@@ -646,8 +1198,13 @@ App.updateAsset = function (caseId, assetId, assetData) {
   if (clash !== null && clash.id !== assetId) {
     return result.fields.name + " is already in Assets (" + clash.id + ").";
   }
+  const wasClean = asset.status === "clean";
   Object.assign(asset, result.fields);
   console.log("Asset updated:", asset);
+  // Added as "clean" and now affected after all? Then it needs one too.
+  if (wasClean) {
+    App.addPreservationTask(caseId, asset);
+  }
   return null;
 };
 
@@ -711,6 +1268,17 @@ App.assetDatalistHtml = function (caseObj, types) {
     .map(function (a) {
       const label = App.assetTypeLabel(a.type) + " · " + App.assetStatusLabel(a.status);
       return `<option value="${e(a.name)}" label="${e(label)}"></option>`;
+    })
+    .join("");
+};
+
+// <option> tags listing a case's IOCs, for a data-ioc-picker pick list
+// (core/pickers.js). value = the real IOC value; label = its type.
+App.iocDatalistHtml = function (caseObj) {
+  const e = App.escapeHtml;
+  return caseObj.iocs
+    .map(function (i) {
+      return `<option value="${e(i.value)}" label="${e(i.id + " · " + App.iocTypeLabel(i.type))}"></option>`;
     })
     .join("");
 };
@@ -1013,6 +1581,9 @@ App.newClientInfo = function () {
       vpnNotes: "",
       // Web link or file path to the network diagram (App.linkFor).
       topologyLink: "",
+      // How to talk if email / M365 / Teams may be compromised
+      // (phone bridge, Signal group, separate tenant...).
+      oobChannel: "",
       cloud: "", os: "", other: ""
     },
     // Backups. "" = not set; yes/no answers use App.CLIENT_CHOICES.yesNo.
@@ -1065,21 +1636,7 @@ App.setClientField = function (caseId, path, value) {
     c.client = value;
     return true;
   }
-  const keys = path.split(".");                  // "org.industry" -> ["org", "industry"]
-  let obj = c.clientInfo;
-  for (let i = 0; i < keys.length - 1; i++) {    // walk down to the parent object
-    obj = obj[keys[i]];
-    if (typeof obj !== "object" || obj === null) {
-      return false;
-    }
-  }
-  const last = keys[keys.length - 1];
-  if (!(last in obj)) {                          // "in" = Python's "key in dict"
-    console.warn("Unknown client field:", path);
-    return false;
-  }
-  obj[last] = value;
-  return true;
+  return App.setPath(c.clientInfo, path, value);   // shared helper (see App.setPath)
 };
 
 // ---- People (IR team and contacts) ----

@@ -33,7 +33,8 @@ App.renderSidebar = function () {
           <span class="tag sev-${e(c.severity)}">${e(c.severity)}</span>
         </span>
         <span class="case-title">${e(c.title || "(no title)")}</span>
-        <span class="case-meta">${e(c.status)}${c.client ? " · " + e(c.client) : ""}</span>
+        <span class="case-meta">${e(c.status)}${c.client ? " · " + e(c.client) : ""}${c.sample
+          ? ' <span class="tag tag-type" title="Sample data: never saved to disk">sample</span>' : ""}</span>
       </button>
     `);
   }

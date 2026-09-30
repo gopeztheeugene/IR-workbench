@@ -317,6 +317,8 @@ App.tabs.client = {
                  placeholder="https://... or C:\\...\\topology.vsdx">
           ${topologyButtons}
         </div>
+        ${row("Out-of-band channel", "environment.oobChannel",
+              "If email / M365 / Teams may be compromised: phone bridge, Signal group, separate tenant...")}
         ${row("Cloud", "environment.cloud", "Azure (1 subscription), no AWS")}
         ${row("OS mix", "environment.os", "Windows 10/11, Server 2019, a few Linux")}
         ${row("Other", "environment.other", "Anything else worth knowing")}
@@ -324,6 +326,7 @@ App.tabs.client = {
       ${tab.backupsHtml(c)}
       ${tab.criticalHtml(c)}
       ${tab.adTriageHtml(c)}
+      ${tab.triageCheckHtml()}
     `;
   },
 
@@ -406,6 +409,66 @@ App.tabs.client = {
     `;
   },
 
+  // REUSABLE: the "Get the script" row for any built-in script
+  // (App.SCRIPTS in core/scripts.js): Download / Copy script / Copy
+  // one-liner, plus a hint about remote shells. "key" is the script's
+  // key, e.g. "adtriage". The buttons carry data-script="key", so one
+  // set of click handlers (in setup) works for every script.
+  scriptToolsHtml: function (key) {
+    const e = App.escapeHtml;
+    if (!App.hasScript(key)) {
+      return `<p class="error small">The built-in script "${e(key)}" is missing from core/scripts.js. ` +
+             'Run tools\\update-scripts.ps1 to create it.</p>';
+    }
+    const s = App.SCRIPTS[key];
+    const length = App.scriptOneLiner(key).length.toLocaleString();   // "13,922"
+    return `
+      <div class="sub-row">
+        <span class="sub-label">Get the script</span>
+        <button class="btn btn-small" data-action="download-script" data-script="${e(key)}">Download ${e(s.file)}</button>
+        <button class="btn btn-small" data-action="copy-script" data-script="${e(key)}">Copy script</button>
+        <button class="btn btn-small btn-primary" data-action="copy-oneliner" data-script="${e(key)}"
+                title="The whole script as one line, safe to paste into a remote shell">Copy one-liner (base64)</button>
+        <span class="muted small">built-in copy updated ${e(s.updated)}</span>
+      </div>
+      <p class="muted small script-hint">
+        <strong>Remote shell</strong> (e.g. Kaseya): use <em>Copy one-liner</em>. It's the whole script
+        on one line (${length} characters), so line breaks can't break it.
+        If a shell cuts off long input, use <em>Download</em> and run the .ps1 file instead.
+      </p>
+    `;
+  },
+
+  // Invoke-TriageCheck.ps1: can we build a storyline on a host, and from
+  // what? (audit policy, log sizes / how far back, log clears, disk
+  // artifacts, EDR / log-shipping agents). Run it on each host of interest.
+  triageCheckHtml: function () {
+    const tab = App.tabs.client;
+    return `
+      <section class="client-section">
+        <h3>Logging &amp; evidence check <span class="muted small">(Invoke-TriageCheck.ps1)</span></h3>
+        <p class="muted small script-hint">
+          Read-only, built-in Windows tools only. Per host it reports: audit policy and
+          4688 command line / script block logging, event log sizes and how many days back
+          they reach (and whether they're full), log clears (1102 / 104), non-log evidence
+          (Prefetch, Amcache, SRUM, shadow copies, PSReadLine, USN, Defender MPLog), and
+          EDR / log-shipping agents. Needs admin (SYSTEM is fine).
+        </p>
+        ${tab.scriptToolsHtml("triagecheck")}
+        <p class="muted small script-hint">
+          ⚠ Run the one-liner as admin or SYSTEM. Its <code>#Requires -RunAsAdministrator</code> check
+          doesn't apply under <code>iex</code>, and without admin rights auditpol and the Security
+          log quietly come back empty.<br>
+          ⚠ The one-liner prints to the screen only (<code>-OutputPath</code> can't be passed through
+          <code>iex</code>). For a saved transcript, download the .ps1 and run it with
+          <code>-OutputPath</code>.<br>
+          ⚠ Running it on a suspect host leaves its own footprint (4688, 4104, Prefetch).
+          Note the time you ran it in the case.
+        </p>
+      </section>
+    `;
+  },
+
   // Cyber insurance: Yes/No, and the provider if Yes.
   insuranceHtml: function (c) {
     const tab = App.tabs.client;
@@ -443,6 +506,7 @@ App.tabs.client = {
     return `
       <section class="client-section">
         <h3>Active Directory triage <span class="muted small">(adtriage.ps1 output)</span></h3>
+        ${App.tabs.client.scriptToolsHtml("adtriage")}
         <div class="sub-row">
           <span class="sub-label">Ran on</span>
           <input class="grow" data-field="adTriage.ranOn" value="${e(ad.ranOn)}"
@@ -778,6 +842,17 @@ App.tabs.client = {
       } else if (action === "copy-path") {
         const path = App.cleanPath(caseObj.clientInfo.devices.paths[button.dataset.source]);
         const ok = await App.copyText(path);
+        App.flashButton(button, ok ? "Copied!" : "Copy failed");
+      } else if (action === "download-script") {
+        // Any built-in script (data-script="key"). Add the final line
+        // break back; text/plain so it isn't treated as CSV.
+        const key = button.dataset.script;
+        App.downloadText(App.SCRIPTS[key].file, App.scriptText(key) + "\n", "text/plain;charset=utf-8");
+      } else if (action === "copy-script") {
+        const ok = await App.copyText(App.scriptText(button.dataset.script));
+        App.flashButton(button, ok ? "Copied!" : "Copy failed");
+      } else if (action === "copy-oneliner") {
+        const ok = await App.copyText(App.scriptOneLiner(button.dataset.script));
         App.flashButton(button, ok ? "Copied!" : "Copy failed");
       } else if (action === "copy-ad") {
         const ok = await App.copyText(caseObj.clientInfo.adTriage.output);

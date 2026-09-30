@@ -205,6 +205,7 @@ App.SAMPLE_CLIENT = {
       "environment.vpn.siteToSite": true,
       "environment.vpnNotes": "FortiClient SSL VPN, no MFA. Site-to-site HQ <-> branch.",
       "environment.topologyLink": "https://sharepoint.example/sites/acme-it/Network%20Topology.pdf",
+      "environment.oobChannel": "Phone bridge +1 555 0100 (PIN 4417) and a Signal group with Dana; no M365 Teams until the tenant is cleared.",
       "scope.inScope": "All Windows endpoints and servers, M365 tenant",
       "scope.outOfScope": "Shop-floor OT network",
       "devices.manualNoEdr": "ACME-KIOSK02",
@@ -254,6 +255,110 @@ App.SAMPLE_CLIENT = {
   }
 };
 
+// Sample Summary and Reports data (only for INC-2041). Paths are inside
+// case.summary (see App.setSummaryField).
+App.SAMPLE_SUMMARY = {
+  "INC-2041": {
+    "detectedAt": "2026-09-20T06:12:00",
+    "detectionSource": "sentinelone",
+    "overview": "Phishing email with a macro-enabled invoice (EV-001) led to a PowerShell loader on ACME-WS114 on 2026-09-18. " +
+                "The attacker obtained svc_backup credentials and used RDP to reach ACME-FS01, where file encryption started overnight on 2026-09-19/20. " +
+                "Affected hosts have been isolated; the file server is down and shared drives are unavailable. Backups are on a domain-joined NAS and are not immutable.",
+    "impact.functional": "high",
+    "impact.functionalNotes": "File server ACME-FS01 encrypted: shared drives unavailable to all staff at HQ and the branch.",
+    "impact.information.integrity": true,
+    "impact.informationNotes": "Files on FS01 encrypted (integrity loss). No evidence of exfiltration yet; outbound traffic review pending.",
+    "impact.recoverability": "extended",
+    "impact.recoverabilityNotes": "Backups not immutable and ERP01 SQL not in Veeam; restore feasibility still being confirmed.",
+    "containment.checklistNotes": "Client IT (Dana), Thrive network team, SentinelOne and the breach coach notified on the 09:00 call."
+  }
+};
+
+// Sample action items (only for INC-2041). Times are given as "hours from
+// now" (h: -30 = 30 hours ago), so overdue / due soon always show up.
+App.SAMPLE_TASKS = {
+  "INC-2041": [
+    { kind: "containment", actionType: "isolate-edr", title: "Isolate hosts via SentinelOne", targets: ["ACME-WS114", "ACME-FS01"],
+      priority: "p1", owner: "msp", status: "done", doneBy: "Thrive (ir-analyst)", doneH: -29,
+      approval: { by: "Dana Reyes", h: -30, method: "call" },
+      notes: "Binalyze triage + memory captured on both hosts before isolation." },
+    { kind: "containment", actionType: "disable-accounts", title: "Disable svc_backup and reset its password", targets: ["ACME\\svc_backup"],
+      priority: "p1", owner: "client", ownerName: "Dana Reyes", status: "done", doneH: -28,
+      approval: { by: "Dana Reyes", h: -30, method: "call" } },
+    { kind: "containment", actionType: "revoke-sessions", title: "Revoke sessions for j.doe", targets: ["j.doe@acme.example"],
+      priority: "p2", owner: "msp", status: "done", doneH: -27,
+      notes: "Done during the call; approval not written down." },
+    { kind: "containment", actionType: "disable-vpn", title: "Disable SSL-VPN", priority: "p2", owner: "client", status: "not-needed",
+      statusReason: "Entry point was the phishing email (EV-001), not the VPN. VPN logs exported first." },
+    { kind: "containment", actionType: "block-lateral", title: "Block lateral movement: SMB / WinRM / RDP between workstations",
+      priority: "p1", owner: "client", ownerName: "Dana Reyes", dueH: -2, status: "blocked",
+      statusReason: "Client network team's change window",
+      approval: { by: "Dana Reyes", h: -20, method: "email" } },
+    { kind: "containment", actionType: "fw-deny", title: "Firewall deny rule for attacker IPs", targets: ["203.0.113.45", "203.0.113.99"],
+      priority: "p2", owner: "msp", dueH: 1, status: "approved",
+      approval: { by: "Dana Reyes", h: -3, method: "teams" } },
+    { kind: "containment", actionType: "protect-backups", title: "Take the Synology NAS offline (protect backups)",
+      targets: ["ACME-NAS01"], priority: "p1", owner: "client", ownerName: "Dana Reyes", status: "planned" },
+    { kind: "task", title: "Send the list of servers not covered by Veeam", priority: "p2",
+      owner: "client", ownerName: "Dana Reyes", dueH: -3, status: "planned" },
+    { kind: "task", title: "Confirm last good restore point for ACME-FS01", targets: ["ACME-FS01"],
+      priority: "p1", owner: "client", dueH: 6, status: "in-progress" },
+    { kind: "task", title: "Notify the cyber insurer (Example Cyber Mutual)", priority: "p2",
+      owner: "third-party", ownerName: "Lee Park", status: "done", doneH: -40 },
+    { kind: "task", title: "Schedule the next war room call", priority: "p3", owner: "me", dueH: 20, status: "planned" }
+  ]
+};
+
+// Add a case's sample action items.
+App.loadSampleTasks = function (caseId) {
+  // "hours from now" -> UTC text
+  function at(hours) {
+    return hours === undefined ? "" : App.time.toUtcText(new Date(Date.now() + hours * 3600000));
+  }
+  for (const s of App.SAMPLE_TASKS[caseId] || []) {
+    const approval = s.approval ? { by: s.approval.by, at: at(s.approval.h), method: s.approval.method } : {};
+    App.addTask(caseId, Object.assign({}, s, { due: at(s.dueH), doneAt: at(s.doneH), approval: approval }));
+  }
+
+  // The "Preserve evidence" items were created automatically when the
+  // sample evidence added its assets. The hosts were captured before
+  // isolation, so mark those done; the rest stay open.
+  const done = App.SAMPLE_PRESERVED[caseId] || [];
+  for (const t of App.findCase(caseId).tasks) {
+    if (App.isPreservationTask(t) && done.includes(t.targets[0])) {
+      App.updateTask(caseId, t.id, Object.assign({}, t, {
+        status: "done", doneBy: "Thrive (ir-analyst)", doneAt: at(-30),
+        notes: t.notes + " Done: Binalyze triage + memory captured before isolation."
+      }));
+    }
+  }
+};
+
+// Sample assets whose evidence is already preserved.
+App.SAMPLE_PRESERVED = {
+  "INC-2041": ["ACME-WS114", "ACME-FS01"]
+};
+
+// Fill in a case's Summary and Reports tab from App.SAMPLE_SUMMARY.
+App.loadSampleSummary = function (caseId) {
+  const sample = App.SAMPLE_SUMMARY[caseId];
+  if (!sample) {
+    return;
+  }
+  for (const path in sample) {
+    App.setSummaryField(caseId, path, sample[path]);
+  }
+  // Containment window: 3 hours from now, so it always shows as upcoming.
+  App.setSummaryField(caseId, "containment.windowStart",
+                      App.time.toUtcText(new Date(Date.now() + 3 * 3600000)));
+  // One assumption already written down (the others show as suggestions).
+  App.addAssumption(caseId, {
+    text: "Assume credential theft across the domain: reset privileged and service accounts, krbtgt twice, and all user passwords; revoke cloud sessions.",
+    basis: "Attacker used svc_backup over RDP to reach ACME-FS01; 3 devices without EDR; Security logs on FS01 only reach back 4 days.",
+    source: "domain-credentials"
+  });
+};
+
 // Fill in a case's Client tab from App.SAMPLE_CLIENT.
 App.loadSampleClient = function (caseId) {
   const sample = App.SAMPLE_CLIENT[caseId];
@@ -295,6 +400,10 @@ App.loadSampleData = function () {
     if (App.addCase(c) === null) {
       added = added + 1;             // Python: added += 1 (also works in JS)
 
+      // Mark it as a sample: sample cases are never saved to disk
+      // (core/storage.js skips them), so fake data never mixes with real cases.
+      App.findCase(c.id).sample = true;
+
       // Only a NEW case gets its sample evidence, so a 2nd click
       // doesn't add the same evidence twice.
       // "|| []" means: if this case has no sample evidence, use an empty list.
@@ -309,6 +418,8 @@ App.loadSampleData = function () {
         App.addIoc(c.id, ioc);
       }
       App.loadSampleClient(c.id);
+      App.loadSampleSummary(c.id);
+      App.loadSampleTasks(c.id);
     }
   }
 

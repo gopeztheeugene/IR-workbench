@@ -18,8 +18,10 @@ exports/
 *.csv
 !samples/*.csv
 
-# Scripts that live in their own repos (e.g. github.com/gopeztheeugene/ad-triage)
+# Scripts that live in their own repos (e.g. github.com/gopeztheeugene/ad-triage).
+# The app's built-in copies are in core/scripts.js (made by tools/update-scripts.ps1).
 adtriage.ps1
+*_b64.ps1
 
 # Editor and OS clutter
 .vscode/

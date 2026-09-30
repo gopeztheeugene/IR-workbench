@@ -1119,3 +1119,538 @@ div.grow {
   justify-content: space-between;
   margin: -4px 0 12px;
 }
+
+/* Hints around the built-in scripts' "Get the script" buttons */
+.script-hint {
+  margin: 4px 0 8px;
+}
+
+/* ---------- Saving: sidebar status box ---------- */
+
+.storage-status {
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.storage-connect {
+  width: 100%;
+}
+
+/* Red "Not saved: changes are lost on refresh" */
+.storage-warn {
+  color: var(--sev-critical);
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+
+.storage-folder {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;   /* long folder names end in "..." */
+  white-space: nowrap;
+}
+
+.storage-line {
+  color: var(--sev-low);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* A button that looks like a small link ("change") */
+.link-button {
+  background: none;
+  border: none;
+  padding: 0 0 0 6px;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ---------- Evidence: copy in the case folder ---------- */
+
+.copy-status {
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+.copy-ok {
+  color: var(--sev-low);
+}
+
+.copy-bad {
+  color: var(--sev-critical);
+  font-weight: 700;
+}
+
+/* ---------- Summary and Reports: impact assessment ---------- */
+
+.impact-category {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  margin-bottom: 14px;
+}
+
+.impact-category h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+/* The 4 option cards side by side (2 per row on narrow screens) */
+.impact-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.impact-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--level-color);   /* colored stripe per level */
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--panel);
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.impact-option:hover {
+  opacity: 1;
+}
+
+/* The chosen card: full color, tinted background */
+.impact-option.selected {
+  opacity: 1;
+  border-color: var(--level-color);
+  box-shadow: inset 0 0 0 1px var(--level-color);
+}
+
+.impact-option-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--level-color);
+}
+
+.impact-option-desc {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* One CSS variable per level, so the stripe/border/title use one color.
+   A variable set on an element is used by everything inside it. */
+.level-0 { --level-color: var(--sev-low); }
+.level-1 { --level-color: var(--sev-medium); }
+.level-2 { --level-color: var(--sev-high); }
+.level-3 { --level-color: var(--sev-critical); }
+
+/* Justification on top, "Comments" (facts from the case) underneath it */
+.impact-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.impact-body .impact-notes {
+  margin-bottom: 8px;
+}
+/* Fact lists (also under the incident summary) */
+.facts {
+  margin: 6px 0 4px;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--muted);   /* grey, same as the "Comments" titles */
+}
+
+.facts li {
+  margin-bottom: 3px;
+}
+
+
+/* ---------- Summary and Reports: headings ---------- */
+
+/* Big section titles: "Incident Summary", "Impact Assessment" */
+.client-section h3.section-title {
+  font-size: 19px;
+  margin: 0 0 10px;
+}
+
+.section-header h3.section-title {
+  margin: 0;
+}
+
+/* Small line under a section title, e.g. "(NIST SP 800-61)" */
+.section-subtitle {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* Category labels: "Functional Impact (how much ...)" */
+.impact-category h4 {
+  font-size: 16px;
+}
+
+.category-hint {
+  font-size: 13px;
+  font-weight: normal;
+  color: var(--muted);
+}
+
+/* ---------- Action Items ---------- */
+
+.quick-add input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.quick-add input:focus {
+  outline: none;
+  border-color: var(--accent);
+  border-style: solid;
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;             /* wrap onto a 2nd line on narrow windows */
+  align-items: flex-end;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+
+/* A small grey label above each filter dropdown */
+.filter-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Pushes "Copy shown items" to the right end of the filter bar */
+.filter-bar .spacer {
+  flex: 1;
+}
+
+.filter-bar select {
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 13px;
+}
+
+/* Status group header rows ("Blocked (1)") */
+.task-table .group-row td {
+  background: var(--bg);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding-top: 12px;
+}
+
+.task-title {
+  min-width: 280px;
+}
+
+.task-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.task-reason,
+.task-done,
+.task-notes {
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.task-reason { color: var(--sev-medium); }
+.task-done   { color: var(--sev-low); }
+.task-notes  { color: var(--muted); }
+
+/* Closed items: faded */
+.task-closed td {
+  opacity: 0.6;
+}
+
+.task-table select.cell-input {
+  min-width: 130px;
+}
+
+/* Priority tags */
+.prio-p1 { color: var(--sev-critical); }
+.prio-p2 { color: var(--sev-high); }
+.prio-p3 { color: var(--sev-medium); }
+.prio-p4 { color: var(--muted); }
+
+.kind-containment { color: var(--status-contained); }
+.kind-recovery    { color: var(--accent); }
+.kind-preserve    { color: var(--sev-medium); cursor: help; }
+.tag-approved     { color: var(--sev-low); }
+.due-soon         { color: var(--sev-medium); font-weight: 600; }
+
+/* Target chips in the pop-up */
+.chip-input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.chip-input input {
+  flex: 1;
+  min-width: 200px;
+  margin-top: 0;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--hover);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 4px 2px 10px;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.chip button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 4px;
+}
+
+/* Undo the full-width dialog input rule for the small chip-add button row */
+dialog .chip-input .btn {
+  width: auto;
+}
+
+/* Push "Delete" to the left, Cancel / Save to the right */
+.form-buttons .spacer {
+  flex: 1;
+}
+
+/* ---------- Containment Strategy ---------- */
+
+/* Reminders: a circled "?" (next to "Incident Summary") that shows a
+   box while the mouse is over it. Pure CSS: the box is hidden
+   (display: none) until the "?" is hovered. Not clickable. */
+.help-tip {
+  position: relative;          /* the box is placed relative to the "?" */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--muted);
+  border-radius: 50%;          /* square -> circle */
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: help;                /* mouse pointer with a "?" */
+  user-select: none;           /* hovering or clicking doesn't select the "?" */
+}
+
+.help-tip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.help-tip-box {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);       /* just below the "?" */
+  right: 0;                    /* lined up with its right edge */
+  width: 460px;
+  max-width: 70vw;
+  z-index: 50;                 /* on top of the sections below */
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 10px 14px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 400;
+  text-align: left;
+  cursor: default;
+}
+
+/* An invisible strip across the 8px gap, so moving the mouse from the
+   "?" down to the box doesn't close it. */
+.help-tip-box::before {
+  content: "";
+  position: absolute;
+  top: -10px;
+  left: 0;
+  right: 0;
+  height: 10px;
+}
+
+.help-tip:hover .help-tip-box {
+  display: block;
+}
+
+.help-tip-box ul {
+  margin: 6px 0 2px;
+  padding-left: 18px;
+}
+
+.help-tip-box li {
+  margin-bottom: 5px;
+}
+
+/* The timing reminder stands out */
+.help-tip-box .reminder-key {
+  color: var(--sev-high);
+  font-weight: 600;
+}
+
+/* A fold-away box (<details>), e.g. Assumptions. Closed = just the
+   title line with a ▸ arrow; click it to open (▾). */
+.fold > summary {
+  cursor: pointer;
+  list-style: none;              /* hide the browser's own arrow... */
+}
+
+.fold > summary::-webkit-details-marker {
+  display: none;                 /* ...in Chrome / Edge too */
+}
+
+.fold > summary h4 {
+  display: inline;
+  margin: 0;
+}
+
+.fold > summary h4 .muted {
+  font-weight: 400;              /* counts like "2 written" not bold */
+}
+
+.fold > summary::before {
+  content: "▸ ";                 /* our own arrow: right when closed */
+  color: var(--muted);
+}
+
+.fold[open] > summary::before {
+  content: "▾ ";                 /* down when open */
+}
+
+.fold-body {
+  margin-top: 10px;
+}
+
+.fold-actions {
+  margin-bottom: 8px;
+}
+
+/* One assumption: text, basis, remove */
+.assumption {
+  display: grid;
+  grid-template-columns: 2fr 2fr auto;
+  gap: 8px;
+  align-items: start;
+  margin-bottom: 8px;
+}
+
+.assumption textarea,
+.assumption input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.suggestions {
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 8px 0 12px;
+}
+
+.suggestion {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 6px 0;
+  font-size: 13px;
+  border-bottom: 1px solid var(--line);
+}
+
+.suggestion:last-child {
+  border-bottom: none;
+}
+
+.suggestion-buttons {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;             /* keep the buttons from being squashed */
+}
+
+.add-action-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.add-action-row select {
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 13px;
+  min-width: 320px;
+}
+
+/* "Before you do this" hints */
+.hint-box {
+  background: rgba(201, 164, 76, 0.08);
+  border: 1px solid var(--sev-medium);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  margin: -4px 0 12px;
+}
+
+.hint-inline {
+  font-size: 12px;
+  color: var(--sev-medium);
+  margin-top: 4px;
+}

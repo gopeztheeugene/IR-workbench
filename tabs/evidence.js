@@ -42,7 +42,7 @@ App.tabs.evidence = {
           <td>${e(ev.source)}</td>
           <td>${e(ev.host)}${App.tabs.evidence.assetTagHtml(caseObj.id, ev.id)}</td>
           <td class="nowrap">${App.tabs.evidence.collectedHtml(ev.collectedAt, zone)}</td>
-          <td>${App.tabs.evidence.locationHtml(ev.location)}</td>
+          <td>${App.tabs.evidence.locationHtml(ev.location)}${App.tabs.evidence.copyHtml(ev.storedCopy)}</td>
           <td>${App.tabs.evidence.hashHtml(ev.hash)}</td>
           <td class="notes">${e(ev.notes)}</td>
           <td>${App.tabs.evidence.rawLogHtml(ev.rawLog)}</td>
@@ -83,8 +83,8 @@ App.tabs.evidence = {
       App.tabs.evidence.openForm(null);          // null = add a new one
     });
 
-    document.getElementById("evidence-export-btn").addEventListener("click", function () {
-      App.tabs.evidence.exportCsv(caseObj);
+    document.getElementById("evidence-export-btn").addEventListener("click", function (event) {
+      App.tabs.evidence.exportCsv(caseObj, event.currentTarget);
     });
 
     // "-> Storyline" buttons. We don't call the Storyline tab. We leave
@@ -146,6 +146,24 @@ App.tabs.evidence = {
   },
 
   // A link becomes a clickable "Open link"; a file shows its name.
+  // Under the location: was the file copied into the case folder, and
+  // did the copy's SHA-256 match? (See App.storage.copyEvidenceFile.)
+  copyHtml: function (copy) {
+    const e = App.escapeHtml;
+    if (!copy) {
+      return "";
+    }
+    let check;
+    if (copy.verified === true) {
+      check = '<span class="copy-ok">✓ hash verified</span>';
+    } else if (copy.verified === false) {
+      check = '<span class="copy-bad">⚠ HASH MISMATCH</span>';
+    } else {
+      check = '<span class="muted">not verified (too large or no hash)</span>';
+    }
+    return `<div class="copy-status small" title="${e(copy.path)}">📁 copied to case folder · ${check}</div>`;
+  },
+
   locationHtml: function (location) {
     const e = App.escapeHtml;
     if (!location || location.value === "") {
@@ -192,23 +210,31 @@ App.tabs.evidence = {
   // CSV export (helpers are shared, in core/export.js)
   // ---------------------------------------------------------------
 
-  // Build the CSV text for a case and download it.
-  exportCsv: function (caseObj) {
+  // Build the CSV text for a case. Saved into the case's exports/ folder
+  // when a cases folder is connected, otherwise downloaded. "button" is
+  // the Export button, used to show where it went.
+  exportCsv: async function (caseObj, button) {
     const tab = App.tabs.evidence;
 
     const header = ["Case ID", "Evidence ID", "Type", "Source", "Host / account",
                     "Collected at (UTC)", "Location kind", "Location", "SHA-256",
-                    "Notes", "Raw log"];
+                    "Notes", "Raw log", "Copy in case folder", "Copy hash verified"];
 
     // One list of values per evidence entry, in the same order as the header.
     const rows = caseObj.evidence.map(function (ev) {
+      const copy = ev.storedCopy;
+      const verified = !copy ? "" : copy.verified === true ? "yes" : copy.verified === false ? "MISMATCH" : "not checked";
       return [caseObj.id, ev.id, App.evidenceTypeLabel(ev.type), ev.source, ev.host,
               tab.formatDateTime(ev.collectedAt), ev.location.kind, ev.location.value,
-              ev.hash, ev.notes, ev.rawLog];
+              ev.hash, ev.notes, ev.rawLog, copy ? copy.path : "", verified];
     });
 
-    App.downloadText(App.safeFileName(caseObj.id) + "_evidence.csv", App.buildCsv(header, rows));
-    console.log("Exported", caseObj.evidence.length, "evidence rows to CSV");
+    const result = await App.storage.saveExport(caseObj, App.safeFileName(caseObj.id) + "_evidence.csv",
+                                                App.buildCsv(header, rows));
+    if (button) {
+      App.flashButton(button, result.saved ? "Saved to exports/" : "Downloaded");
+    }
+    console.log("Exported", caseObj.evidence.length, "evidence rows:", result.saved ? result.path : "download");
   },
 
   // ---------------------------------------------------------------
@@ -329,7 +355,8 @@ App.tabs.evidence = {
 
     // "Add evidence" / "Save changes" button: read the form, then
     // add a new entry or update the one being edited.
-    form.addEventListener("submit", function (event) {
+    // "async" because copying a file into the case folder takes a moment.
+    form.addEventListener("submit", async function (event) {
       event.preventDefault();         // don't reload the page
 
       const caseObj = App.getSelectedCase();
@@ -373,6 +400,29 @@ App.tabs.evidence = {
         errorBox.textContent = error;  // keep the pop-up open to fix it
         return;
       }
+
+      // Copy a newly picked local file into the case's evidence/ folder,
+      // if a cases folder is connected and the box is ticked.
+      const file = fileInput.files[0];
+      const wantCopy = document.getElementById("evidence-copy").checked;
+      if (kind === "file" && file && wantCopy && App.storage.canSave(caseObj)) {
+        // The entry's ID: the one being edited, or the one just added (last).
+        const evidenceId = tab.editingId || caseObj.evidence[caseObj.evidence.length - 1].id;
+        const saved = App.findEvidence(caseObj.id, evidenceId);
+        submitBtn.disabled = true;
+        errorBox.textContent = "";
+        hashStatus.textContent = "Copying into the case folder...";
+        try {
+          const info = await App.storage.copyEvidenceFile(caseObj, evidenceId, file, saved.hash);
+          App.setEvidenceCopy(caseObj.id, evidenceId, info);
+        } catch (err) {
+          // The entry is saved either way; only the copy failed.
+          alert("The evidence entry was saved, but copying the file failed:\n" + err.message);
+        } finally {
+          submitBtn.disabled = false;
+        }
+      }
+
       dialog.close();
       App.render();
     });
@@ -457,23 +507,18 @@ App.tabs.evidence = {
       }
     }
 
+    // "Copy into the case's evidence/ folder": only when this case can be
+    // saved (a cases folder is connected and it's not a sample case).
+    document.getElementById("evidence-copy-row").hidden = !App.storage.canSave(App.getSelectedCase());
+
     App.time.fillZoneHints();           // "(Asia/Manila, UTC+08:00)" in the label
     tab.updateTimePreview();
     document.getElementById("evidence-dialog").showModal();
   },
 
-  // Calculate the SHA-256 of a file (or any Blob) as a 64-character
-  // hex string. Python equivalent:
-  //   hashlib.sha256(open(path, "rb").read()).hexdigest()
-  sha256Hex: async function (file) {
-    // Read the whole file as raw bytes.
-    const bytes = await file.arrayBuffer();
-    // Web Crypto does the hashing. The result is 32 raw bytes.
-    const digest = await crypto.subtle.digest("SHA-256", bytes);
-    // Turn each byte into 2 hex characters (255 -> "ff", 7 -> "07")
-    // and join them, like Python's "".join(f"{b:02x}" for b in digest).
-    return Array.from(new Uint8Array(digest))
-      .map(function (b) { return b.toString(16).padStart(2, "0"); })
-      .join("");
+  // SHA-256 of a file. The real work is in App.sha256Hex (core/export.js),
+  // shared with the storage code that verifies copied evidence files.
+  sha256Hex: function (file) {
+    return App.sha256Hex(file);
   }
 };

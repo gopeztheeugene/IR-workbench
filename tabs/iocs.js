@@ -125,8 +125,8 @@ App.tabs.iocs = {
       App.flashButton(event.target, ok ? "Copied " + caseObj.iocs.length + "!" : "Copy failed");
     });
 
-    document.getElementById("ioc-export-btn").addEventListener("click", function () {
-      tab.exportCsv(caseObj);
+    document.getElementById("ioc-export-btn").addEventListener("click", function (event) {
+      tab.exportCsv(caseObj, event.currentTarget);
     });
 
     document.getElementById("ioc-extract-btn").addEventListener("click", function () {
@@ -161,7 +161,9 @@ App.tabs.iocs = {
 
   // CSV with both the real and the defanged value (real for block
   // lists and tools, defanged for reports and emails).
-  exportCsv: function (caseObj) {
+  // Saved into the case's exports/ folder when a cases folder is
+  // connected, otherwise downloaded. "button" shows where it went.
+  exportCsv: async function (caseObj, button) {
     const header = ["Case ID", "IOC ID", "Type", "Value", "Value (defanged)", "TLP",
                     "First seen (UTC)", "Linked evidence", "Notes"];
     const rows = caseObj.iocs.map(function (ioc) {
@@ -169,8 +171,12 @@ App.tabs.iocs = {
               App.ioc.defang(ioc.value, ioc.type), App.tlpLabel(ioc.tlp),
               ioc.firstSeen.replace("T", " "), ioc.evidenceIds.join(" "), ioc.notes];
     });
-    App.downloadText(App.safeFileName(caseObj.id) + "_iocs.csv", App.buildCsv(header, rows));
-    console.log("Exported", caseObj.iocs.length, "IOCs to CSV");
+    const result = await App.storage.saveExport(caseObj, App.safeFileName(caseObj.id) + "_iocs.csv",
+                                                App.buildCsv(header, rows));
+    if (button) {
+      App.flashButton(button, result.saved ? "Saved to exports/" : "Downloaded");
+    }
+    console.log("Exported", caseObj.iocs.length, "IOCs:", result.saved ? result.path : "download");
   },
 
   // ---------------------------------------------------------------
