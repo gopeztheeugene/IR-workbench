@@ -26,7 +26,7 @@ No server, no install, no build step, no internet connection needed.
 - The incident response team and contacts, each marked Client Owned, Thrive, or 3rd Party.
 - Cyber insurance, and a backups section: who's responsible, product, coverage, retention, RPO, storage location, and immutability (red tags for gaps).
 - Environment, one line per item: identity, email, network, VPN types, a clickable network topology link, the **out-of-band channel** to use if email may be compromised, cloud, and OS mix.
-- **Critical assets in restore order** (#1 first), for planning recovery.
+- **Critical assets in restore order**, labelled BC-01, BC-02… (business critical, #1 restored first), each with its **AD tier** (Microsoft's tier model: Tier 0 identity / control plane, Tier 1 servers and apps, Tier 2 workstations and users).
 - **Active Directory triage** and **logging & evidence check**: paste script output, and download or copy the built-in PowerShell scripts (as a script or a base64 one-liner).
 - Links to the client's device list CSVs on disk. **Devices without EDR** are found from the RMM export's `EDR` column and highlighted on every tab.
 
@@ -66,6 +66,8 @@ No server, no install, no build step, no internet connection needed.
 
 **Assets**
 - Lists the affected hosts and accounts, each with a status: suspected → confirmed → contained → remediated → clean.
+- Tags after each name show what matters at a glance: `[no EDR] [Tier 0] [BC-01]`. The BC tag appears when the asset is on the client's critical assets list; the tier comes from the asset or that list. A filter shows business critical assets only.
+- If a **Tier 0** asset is affected, a warning shows in the case header on every tab, and the containment strategy suggests assuming full domain compromise.
 - Assets are added automatically from evidence when you tick "affected". Host fields across the app can pick from this list.
 
 **Saving**
