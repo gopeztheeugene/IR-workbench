@@ -99,6 +99,14 @@ App.taskForm = {
     document.getElementById("task-status").innerHTML = options(App.TASK_STATUSES);
     document.getElementById("task-approval-method").innerHTML = options(App.APPROVAL_METHODS);
 
+    // Pick list for the Action field (and the Action Items quick-add bar):
+    // the containment catalog, minus "Other". A <datalist> only suggests;
+    // anything can still be typed.
+    document.getElementById("task-title-choices").innerHTML = App.CONTAINMENT_ACTIONS
+      .filter(function (a) { return a.key !== "other"; })
+      .map(function (a) { return `<option value="${e(a.label)}"></option>`; })
+      .join("");
+
     // Kind / status / action type show or hide the related fields.
     document.getElementById("task-kind").addEventListener("change", tf.updateFormFields);
     document.getElementById("task-status").addEventListener("change", tf.updateFormFields);
@@ -117,6 +125,21 @@ App.taskForm = {
           ? App.labelFor(App.CONTAINMENT_ACTIONS, typeSelect.value) : "";
       }
       lastTypeLabel = App.labelFor(App.CONTAINMENT_ACTIONS, typeSelect.value);
+      tf.updateFormFields();
+    });
+
+    // The other way round: picking a common action in the Action field
+    // makes the item that containment action (action type Containment,
+    // containment action set, hint shown). Typing something else changes
+    // nothing, so free text works as before.
+    form.elements["title"].addEventListener("input", function () {
+      const action = App.containmentActionForTitle(form.elements["title"].value);
+      if (action === null) {
+        return;
+      }
+      form.elements["kind"].value = "containment";
+      typeSelect.value = action.key;
+      lastTypeLabel = action.label;
       tf.updateFormFields();
     });
 

@@ -48,9 +48,10 @@ App.tabs.tasks = {
       </div>
       ${tab.readinessHtml(caseObj)}
 
-      <!-- Quick add: type and press Enter (an ad-hoc action item, P3, owner Me) -->
+      <!-- Quick add: type and press Enter (a General item, Medium, owner Me) -->
       <form class="quick-add" id="task-quick-form">
-        <input id="task-quick" placeholder="Quick add: type an action item and press Enter" autocomplete="off">
+        <input id="task-quick" list="task-title-choices" autocomplete="off"
+               placeholder="Quick add: type an action item (or pick a common action) and press Enter">
       </form>
 
       <div class="filter-bar">
@@ -58,7 +59,7 @@ App.tabs.tasks = {
           { key: "all", label: "All" }, { key: "open", label: "Open" }, { key: "closed", label: "Closed" }])}
         ${filterSelect("Action Type", "kind", f.kind, [{ key: "all", label: "All" }].concat(App.TASK_KINDS))}
         ${filterSelect("Item Owner", "owner", f.owner, [{ key: "all", label: "All" }].concat(App.TASK_OWNERS))}
-        ${filterSelect("Host", "host", f.host, [{ key: "all", label: "All" }].concat(
+        ${filterSelect("Assets", "host", f.host, [{ key: "all", label: "All" }].concat(
           hosts.map(function (h) { return { key: h, label: h }; })))}
         <span class="spacer"></span>
         <!-- Copy / export buttons, together at the right end -->
@@ -154,7 +155,7 @@ App.tabs.tasks = {
 
   // The shown items as a numbered list for an email, Teams, or notes:
   //   Action items – INC-2041 (Open · Host: ACME-FS01) as of 2026-09-30 14:00 UTC
-  //   1. TK-009 [P1] Confirm last good restore point – Client Owned: Dana – due ... (ACME-FS01) – In progress
+  //   1. TK-009 [Critical] Confirm last good restore point – Client Owned: Dana – due ... (ACME-FS01) – In progress
   shownItemsText: function (caseObj) {
     const tab = App.tabs.tasks;
     const f = tab.filters;
@@ -163,12 +164,12 @@ App.tabs.tasks = {
     const used = [f.view === "all" ? "All statuses" : (f.view === "open" ? "Open" : "Closed")];
     if (f.kind !== "all") { used.push(App.labelFor(App.TASK_KINDS, f.kind)); }
     if (f.owner !== "all") { used.push("Owner: " + App.labelFor(App.TASK_OWNERS, f.owner)); }
-    if (f.host !== "all") { used.push("Host: " + f.host); }
+    if (f.host !== "all") { used.push("Asset: " + f.host); }
 
     const lines = ["Action items – " + caseObj.id + " (" + used.join(" · ") + ") as of " + when(App.time.nowUtc())];
     tab.shownItems(caseObj).forEach(function (t, i) {
       const due = App.taskDue(caseObj, t).due;
-      let line = (i + 1) + ". " + t.id + " [" + t.priority.toUpperCase() + "] " + t.title;
+      let line = (i + 1) + ". " + t.id + " [" + App.labelFor(App.TASK_PRIORITIES, t.priority) + "] " + t.title;
       line += " – " + App.labelFor(App.TASK_OWNERS, t.owner) + (t.ownerName ? ": " + t.ownerName : "");
       if (due && App.taskIsOpen(t)) { line += " – due " + when(due); }
       if (t.targets.length) { line += " (" + t.targets.join(", ") + ")"; }
@@ -208,7 +209,7 @@ App.tabs.tasks = {
             </div>`;
   },
 
-  // Sort: priority (p1 first), then due time (items without one last).
+  // Sort: priority (Critical first), then due time (items without one last).
   // Uses each item's effective due time (own, or the containment window).
   comparator: function (caseObj) {
     return function (a, b) {
@@ -262,7 +263,7 @@ App.tabs.tasks = {
     return `
       <tr class="${open ? "" : "task-closed"}">
         <td class="nowrap"><strong>${e(t.id)}</strong></td>
-        <td class="nowrap"><span class="tag prio-${e(t.priority)}">${e(t.priority.toUpperCase())}</span></td>
+        <td class="nowrap"><span class="tag prio-${e(t.priority)}">${e(App.labelFor(App.TASK_PRIORITIES, t.priority))}</span></td>
         <td class="task-title">
           ${e(t.title)}
           ${tags.length ? `<div class="task-tags">${tags.join(" ")}</div>` : ""}
@@ -319,7 +320,7 @@ App.tabs.tasks = {
       }
     });
 
-    // Quick add: Enter adds an ad-hoc item (P3, owner Me, Planned).
+    // Quick add: Enter adds an item (owner Me, Planned).
     panel.addEventListener("submit", function (event) {
       if (event.target.id !== "task-quick-form") {
         return;
@@ -329,7 +330,16 @@ App.tabs.tasks = {
       if (input.value.trim() === "") {
         return;
       }
-      App.addTask(App.state.selectedCaseId, { kind: "task", title: input.value, priority: "p3", owner: "me" });
+      // A common action picked from the list becomes that containment
+      // action (Critical, like "+ Add action" in the Containment Strategy).
+      // Anything else is a General item (Medium).
+      const action = App.containmentActionForTitle(input.value);
+      if (action) {
+        App.addTask(App.state.selectedCaseId, { kind: "containment", actionType: action.key,
+                                                title: input.value, priority: "p1", owner: "me" });
+      } else {
+        App.addTask(App.state.selectedCaseId, { kind: "task", title: input.value, priority: "p3", owner: "me" });
+      }
       App.render();
       document.getElementById("task-quick").focus();     // ready for the next one
     });
@@ -341,7 +351,7 @@ App.tabs.tasks = {
 
   // The client's open items as a numbered list for an email or Teams:
   //   Client action items – INC-2041 (as of 2026-09-30 14:00 UTC)
-  //   1. [P1] Confirm last good restore point – due 2026-09-30 20:00 UTC (ACME-FS01)
+  //   1. [Critical] Confirm last good restore point – due 2026-09-30 20:00 UTC (ACME-FS01)
   clientItemsText: function (caseObj) {
     const when = App.taskForm.when;
     const items = caseObj.tasks
@@ -350,7 +360,7 @@ App.tabs.tasks = {
     const lines = ["Client action items – " + caseObj.id + " (as of " + when(App.time.nowUtc()) + ")"];
     items.forEach(function (t, i) {
       const due = App.taskDue(caseObj, t).due;
-      let line = (i + 1) + ". [" + t.priority.toUpperCase() + "] " + t.title;
+      let line = (i + 1) + ". [" + App.labelFor(App.TASK_PRIORITIES, t.priority) + "] " + t.title;
       if (t.ownerName) { line += " – " + t.ownerName; }
       if (due) { line += " – due " + when(due); }
       if (t.targets.length) { line += " (" + t.targets.join(", ") + ")"; }

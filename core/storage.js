@@ -34,7 +34,7 @@ App.storage = {
   saved: {},               // case ID -> JSON text of the case as last saved / loaded
   lastHistory: {},         // case ID -> time (ms) of the last .history copy
 
-  SCHEMA_VERSION: 2,      // raise when case.json's layout changes (and convert old files)
+  SCHEMA_VERSION: 3,     // raise when case.json's layout changes (and convert old files)
   HISTORY_KEEP: 20,        // how many .history copies to keep per case
   HISTORY_EVERY_MS: 5 * 60 * 1000,  // at most one .history copy per 5 minutes
   MAX_VERIFY_BYTES: 1024 ** 3       // copies bigger than 1 GB aren't re-hashed

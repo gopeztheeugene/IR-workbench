@@ -30,10 +30,10 @@ App.renderSidebar = function () {
       <button class="case-row${selected}" data-id="${e(c.id)}">
         <span class="case-top">
           <span class="case-id">${e(c.id)}</span>
-          <span class="tag sev-${e(c.severity)}">${e(c.severity)}</span>
+          <span class="tag prio-${e(c.priority)}">${e(App.labelFor(App.CASE_PRIORITIES, c.priority))}</span>
         </span>
         <span class="case-title">${e(c.title || "(no title)")}</span>
-        <span class="case-meta">${e(c.status)}${c.client ? " · " + e(c.client) : ""}${c.sample
+        <span class="case-meta">${e(App.labelFor(App.CASE_STATUSES, c.status))}${c.client ? " · " + e(c.client) : ""}${c.sample
           ? ' <span class="tag tag-type" title="Sample data: never saved to disk">sample</span>' : ""}</span>
       </button>
     `);
@@ -64,33 +64,23 @@ App.setupNewCaseForm = function () {
 
   // Build <option> tags from the lists in state.js, so the choices
   // live in one place. .map() is like a list comprehension:
-  //   [f"<option>{s}</option>" for s in SEVERITIES]
+  //   [f"<option>{p['label']}</option>" for p in CASE_PRIORITIES]
   // The "selected" attribute marks the default choice.
-  document.getElementById("new-case-severity").innerHTML = App.SEVERITIES
-    .map(function (s) {
-      const def = s === "medium" ? " selected" : "";
-      return `<option value="${s}"${def}>${s}</option>`;
+  document.getElementById("new-case-priority").innerHTML = App.CASE_PRIORITIES
+    .map(function (p) {
+      const def = p.key === "p2" ? " selected" : "";
+      return `<option value="${p.key}"${def}>${e(p.label)}</option>`;
     })
     .join("");
 
-  document.getElementById("new-case-status").innerHTML = App.STATUSES
+  document.getElementById("new-case-status").innerHTML = App.CASE_STATUSES
     .map(function (s) {
-      const def = s === "open" ? " selected" : "";
-      return `<option value="${s}"${def}>${s}</option>`;
+      const def = s.key === "open" ? " selected" : "";
+      return `<option value="${s.key}"${def}>${e(s.label)}</option>`;
     })
     .join("");
 
-  // One checkbox per case type. They all share name="types", so the
-  // form can hand us every checked one as a list (see getAll below).
-  // The value is the key ("bec"); the text shown is the label.
-  document.getElementById("new-case-types").innerHTML = App.CASE_TYPES
-    .map(function (t) {
-      return `<label class="type-option">
-                <input type="checkbox" name="types" value="${e(t.key)}">
-                ${e(t.label)}
-              </label>`;
-    })
-    .join("");
+  document.getElementById("new-case-types").innerHTML = App.caseTypeBoxesHtml();
 
   // "+ New case" button: clear the form and open the pop-up.
   document.getElementById("new-case-btn").addEventListener("click", function () {
@@ -119,7 +109,7 @@ App.setupNewCaseForm = function () {
       id: data.get("id"),
       title: data.get("title"),
       client: data.get("client"),
-      severity: data.get("severity"),
+      priority: data.get("priority"),
       status: data.get("status"),
       opened: data.get("opened"),
       types: data.getAll("types")
@@ -139,6 +129,128 @@ App.setupNewCaseForm = function () {
     dialog.close();
     App.render();
   });
+};
+
+// One tick box per case type, shared by the New case and Edit case
+// forms. They all share name="types", so a form hands us every ticked
+// one as a list (FormData.getAll). The value is the key ("bec"); the
+// text shown is the label.
+App.caseTypeBoxesHtml = function () {
+  const e = App.escapeHtml;
+  return App.CASE_TYPES
+    .map(function (t) {
+      return `<label class="type-option">
+                <input type="checkbox" name="types" value="${e(t.key)}">
+                ${e(t.label)}
+              </label>`;
+    })
+    .join("");
+};
+
+// ---------------------------------------------------------------
+// "Edit case" pop-up (opened from the case header)
+// ---------------------------------------------------------------
+
+// Runs once at startup (called from app.js).
+App.setupEditCaseForm = function () {
+  const dialog = document.getElementById("edit-case-dialog");
+  const form = document.getElementById("edit-case-form");
+  const errorBox = document.getElementById("edit-case-error");
+  const e = App.escapeHtml;
+
+  function options(list) {
+    return list.map(function (o) { return `<option value="${e(o.key)}">${e(o.label)}</option>`; }).join("");
+  }
+  document.getElementById("edit-case-priority").innerHTML = options(App.CASE_PRIORITIES);
+  document.getElementById("edit-case-status").innerHTML = options(App.CASE_STATUSES);
+  document.getElementById("edit-case-types").innerHTML = App.caseTypeBoxesHtml();
+
+  // The "Edit case" button is redrawn with the header every time, so
+  // listen on the header itself (it stays) and check what was clicked.
+  document.getElementById("case-header").addEventListener("click", function (event) {
+    if (event.target.closest("[data-action='edit-case']")) {
+      App.openEditCase();
+    }
+  });
+
+  document.getElementById("edit-case-cancel").addEventListener("click", function () {
+    dialog.close();
+  });
+
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    const c = App.getSelectedCase();
+    const data = new FormData(form);
+    const details = {
+      title: data.get("title"),
+      client: data.get("client"),
+      priority: data.get("priority"),
+      status: data.get("status"),
+      opened: data.get("opened"),
+      types: data.getAll("types")
+    };
+
+    // Closing with action items still open? Warn and list them.
+    // confirm() shows OK / Cancel and returns true / false.
+    if (details.status === "closed" && c.status !== "closed") {
+      const open = c.tasks.filter(App.taskIsOpen);
+      if (open.length > 0) {
+        const list = open.slice(0, 10).map(function (t) {
+          return "• " + t.id + " " + t.title + " (" + App.labelFor(App.TASK_STATUSES, t.status) + ")";
+        });
+        if (open.length > 10) {
+          list.push("• ... and " + (open.length - 10) + " more");
+        }
+        const ok = confirm(open.length + " action item" + (open.length === 1 ? " is" : "s are") +
+          " still open:\n\n" + list.join("\n") +
+          "\n\nClose the case anyway? (Cancel to go back and close them first.)");
+        if (!ok) {
+          return;                  // the pop-up stays open
+        }
+      }
+    }
+
+    const error = App.updateCaseDetails(c.id, details);
+    if (error) {
+      errorBox.textContent = error;
+      return;
+    }
+    dialog.close();
+    App.render();
+  });
+};
+
+// Open the Edit case pop-up, filled in from the selected case.
+App.openEditCase = function () {
+  const c = App.getSelectedCase();
+  if (c === null) {
+    return;
+  }
+  const e = App.escapeHtml;
+  const form = document.getElementById("edit-case-form");
+  document.getElementById("edit-case-title").textContent = "Edit case " + c.id;
+  form.elements["title"].value = c.title;
+  form.elements["client"].value = c.client;
+  form.elements["priority"].value = c.priority;
+  form.elements["status"].value = c.status;
+  form.elements["opened"].value = c.opened;
+  for (const box of form.querySelectorAll("input[name='types']")) {
+    box.checked = c.types.includes(box.value);
+  }
+
+  // Status history, newest first: "Contained 2026-09-30 10:00 UTC (was Open)".
+  const history = c.statusHistory.slice().reverse().map(function (h) {
+    const shown = App.time.display(h.at, App.state.displayTimeZone);
+    const to = App.labelFor(App.CASE_STATUSES, h.to);
+    return `<li>${e(to)} ${e(shown.date + " " + shown.clock + " " + shown.zoneLabel)}` +
+           (h.from ? ` <span>(was ${e(App.labelFor(App.CASE_STATUSES, h.from))})</span>` : "") + "</li>";
+  }).join("");
+  document.getElementById("edit-case-history").innerHTML = history
+    ? `Status changes:<ul class="status-history">${history}</ul>`
+    : "No status changes recorded yet.";
+
+  document.getElementById("edit-case-error").textContent = "";
+  document.getElementById("edit-case-dialog").showModal();
 };
 
 // ---------------------------------------------------------------

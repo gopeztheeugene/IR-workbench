@@ -66,13 +66,35 @@ function renderCaseHeader() {
   const noEdrTag = noEdrCount === 0 ? "" :
     `<span class="tag tag-warning" title="See the Client tab, Device lists">⚠ ${noEdrCount} device${noEdrCount === 1 ? "" : "s"} without EDR</span>`;
 
+  // A Tier 0 asset (DC, Entra Connect, ...) is affected: the whole
+  // domain is at risk, so this is shown on every tab too.
+  const tier0 = App.tier0Affected(c);
+  const tier0Tag = tier0.length === 0 ? "" :
+    `<span class="tag tag-warning" title="${e(tier0.map(function (a) { return a.name; }).join(", "))} (see the Assets tab)">⚠ Tier 0 asset affected</span>`;
+
+  // Dates on the right: "Opened 2026-09-20 · Contained 2026-09-30 10:00 UTC".
+  // Contained shows once the case is contained or closed; Closed only
+  // while it's closed (a reopened case isn't closed any more).
+  const dates = ["Opened " + c.opened];
+  const containedAt = App.statusChangedAt(c, "contained");
+  const closedAt = App.statusChangedAt(c, "closed");
+  if (containedAt && (c.status === "contained" || c.status === "closed")) {
+    dates.push("Contained " + App.taskForm.when(containedAt));
+  }
+  if (closedAt && c.status === "closed") {
+    dates.push("Closed " + App.taskForm.when(closedAt));
+  }
+
   header.innerHTML = `
     <div class="case-header-top">
       <h2>${e(c.id)}${c.title ? " · " + e(c.title) : ""}</h2>
-      <span class="tag sev-${e(c.severity)}">${e(c.severity)}</span>
-      <span class="tag status-${e(c.status)}">${e(c.status)}</span>
+      <span class="tag prio-${e(c.priority)}" title="Case priority">${e(App.labelFor(App.CASE_PRIORITIES, c.priority))}</span>
+      <span class="tag status-${e(c.status)}">${e(App.labelFor(App.CASE_STATUSES, c.status))}</span>
       ${noEdrTag}
-      <span class="case-opened">Opened ${e(c.opened)}</span>
+      ${tier0Tag}
+      <span class="case-opened">${e(dates.join(" · "))}
+        <button class="btn btn-small" data-action="edit-case" title="Change title, client, priority, status, opened date, case types">Edit case</button>
+      </span>
     </div>
     <div class="case-header-meta">
       ${c.client ? "Client: " + e(c.client) : "No client set"}
@@ -155,6 +177,7 @@ App.setupDisplayZone();
 App.setupAssetPickers();     // any box with data-asset-picker gets the asset list
 App.taskForm.setup();        // the shared add / edit action item pop-up
 App.setupNewCaseForm();
+App.setupEditCaseForm();     // "Edit case" in the case header
 
 // Some tabs have a one-time setup() (e.g. wiring up a pop-up form).
 // "for (const name in App.tabs)" loops over the keys, exactly like

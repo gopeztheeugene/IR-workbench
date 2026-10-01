@@ -16,9 +16,10 @@ No server, no install, no build step, no internet connection needed.
 ## Features
 
 **Cases**
-- The case list in the sidebar shows severity and status.
+- The case list in the sidebar shows each case's priority (P1, P2, P3; P1 is the most urgent) and status.
 - Each case has one or more case types: ransomware, BEC, phishing, account takeover, supply chain, and more.
-- A case header shows the ticket, severity, status, client, and case types on every tab, plus a red warning when devices are missing EDR.
+- A case header shows the ticket, priority, status, client, and case types on every tab, plus a red warning when devices are missing EDR.
+- **Edit case** changes the title, client, priority, status, opened date, and case types (the ticket ID stays fixed). Status changes are time-stamped, and the header shows when the case was contained and closed. Closing a case with open action items asks you to confirm first.
 
 **Client**
 - Organization details, and one line per subscription: EDR, SIEM, RMM, managed firewall, IR retainer (with a warning if the client isn't in the Binalyze console yet).
@@ -39,7 +40,7 @@ No server, no install, no build step, no internet connection needed.
 - Hover reminders (the circled **?**) next to the section titles.
 
 **Action Items**
-- One list per case for containment, recovery, and general follow-ups, with priority (P1–P4), owner, due time, status, approval (who, when, how), and done time.
+- One list per case for containment, recovery, and general follow-ups, with priority (Critical, High, Medium, Low), owner, due time, status, approval (who, when, how), and done time.
 - Containment actions are shared with the containment strategy: edit one in either place and both update.
 - Rules: containment actions need a recorded approval before they're marked Approved; blocked and not-needed items need a reason; closed items are kept for the record.
 - **Evidence preservation:** every affected asset automatically gets a "Preserve evidence" item, with notes on what to collect for that asset type. A banner warns while they're still open and containment is planned.
@@ -126,7 +127,7 @@ Invoke-TriageCheck.ps1 logging & evidence check script (built into the Client ta
 - [x] Save and load case folders on disk (File System Access API)
 - [x] Action Items tab
 - [x] Summary and Reports: incident summary, impact assessment, containment strategy
-- [ ] Edit case details (status, severity, title, types)
+- [x] Edit case details (status, priority, title, types), with time-stamped status changes
 - [ ] Recovery strategy (driven by the critical assets restore order)
 - [ ] Pre-call briefs and client report
 - [ ] Post-incident tab (lessons learned across cases)

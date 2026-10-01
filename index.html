@@ -56,9 +56,9 @@
 
       <!-- Three fields side by side -->
       <div class="form-row">
-        <label>Severity
-          <!-- Options are filled in by JavaScript from App.SEVERITIES -->
-          <select name="severity" id="new-case-severity"></select>
+        <label>Priority
+          <!-- Options are filled in by JavaScript from App.CASE_PRIORITIES -->
+          <select name="priority" id="new-case-priority"></select>
         </label>
         <label>Status
           <select name="status" id="new-case-status"></select>
@@ -83,6 +83,50 @@
         <button type="button" id="new-case-cancel" class="btn">Cancel</button>
         <!-- type="submit" triggers the form's "submit" event -->
         <button type="submit" class="btn btn-primary">Create case</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- EDIT CASE POP-UP. Opened by "Edit case" in the case header;
+       the code is in core/sidebar.js (App.setupEditCaseForm). The ticket
+       ID is shown but can't be changed: it names the case's folder. -->
+  <dialog id="edit-case-dialog">
+    <form id="edit-case-form">
+      <h2 id="edit-case-title">Edit case</h2>
+
+      <label>Title
+        <input name="title" placeholder="Acme ransomware">
+      </label>
+
+      <label>Client
+        <input name="client" placeholder="Acme Corp">
+      </label>
+
+      <div class="form-row">
+        <label>Priority
+          <select name="priority" id="edit-case-priority"></select>
+        </label>
+        <label>Status
+          <select name="status" id="edit-case-status"></select>
+        </label>
+        <label>Opened
+          <input name="opened" type="date" required>
+        </label>
+      </div>
+
+      <fieldset>
+        <legend>Case type (pick any that apply)</legend>
+        <div id="edit-case-types" class="type-grid"></div>
+      </fieldset>
+
+      <!-- When the status changed, and to what (from statusHistory) -->
+      <div id="edit-case-history" class="muted small"></div>
+
+      <p id="edit-case-error" class="error"></p>
+
+      <div class="form-buttons">
+        <button type="button" id="edit-case-cancel" class="btn">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
       </div>
     </form>
   </dialog>
@@ -369,8 +413,12 @@
       <p class="muted small" id="task-dialog-hint"></p>
 
       <label>Action *
-        <input name="title" required placeholder="Isolate ACME-WS114 via SentinelOne">
+        <!-- list=...: a pick list of common actions (the containment catalog),
+             filled in by core/taskform.js. Free typing still works. -->
+        <input name="title" required list="task-title-choices" autocomplete="off"
+               placeholder="Type, or pick a common action (e.g. Isolate host)">
       </label>
+      <datalist id="task-title-choices"></datalist>
 
       <div class="form-row">
         <label>Action type
@@ -482,6 +530,14 @@
           <select name="status" id="asset-status"></select>
         </label>
       </div>
+
+      <label>AD tier
+        <!-- Filled in from App.AD_TIERS. "Not set" = use the tier from the
+             Client tab's critical assets list, if the asset is on it. -->
+        <select name="tier" id="asset-tier"></select>
+        <span class="muted small">Tier 0: DCs, Entra Connect, AD CS, ADFS, PAM, backup / hypervisor / RMM with domain admin ·
+          Tier 1: servers and apps · Tier 2: workstations and users. "Not set" uses the critical assets list's tier.</span>
+      </label>
 
       <label>Notes
         <textarea name="notes" rows="3" placeholder="How it was affected, what was done"></textarea>

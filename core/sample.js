@@ -13,7 +13,7 @@ App.SAMPLE_CASES = [
     title: "Acme ransomware",
     client: "Acme Corp",
     types: ["phishing", "ransomware"],
-    severity: "critical",
+    priority: "p1",
     status: "contained",
     opened: "2026-09-20"
   },
@@ -22,7 +22,7 @@ App.SAMPLE_CASES = [
     title: "CFO mailbox forwarding rule",
     client: "Globex",
     types: ["bec", "account-takeover"],
-    severity: "high",
+    priority: "p2",
     status: "open",
     opened: "2026-09-24"
   },
@@ -31,7 +31,7 @@ App.SAMPLE_CASES = [
     title: "VPN appliance exploited",
     client: "Initech",
     types: ["vuln-exploit", "data-exfil"],
-    severity: "medium",
+    priority: "p3",
     status: "closed",
     opened: "2026-09-02"
   }
@@ -242,9 +242,9 @@ App.SAMPLE_CLIENT = {
     ],
     // Restore / recovery order (#1 first).
     critical: [
-      { name: "ACME-DC01", purpose: "Domain controller: everything needs AD", backup: "Veeam nightly, system state" },
-      { name: "ACME-ERP01", purpose: "ERP database: production stops without it", backup: "SQL native backups + Veeam" },
-      { name: "ACME-FS01", purpose: "File server: shared drives", backup: "Veeam nightly (encrypted, restore from NAS)" }
+      { name: "ACME-DC01", tier: "t0", purpose: "Domain controller: everything needs AD", backup: "Veeam nightly, system state" },
+      { name: "ACME-ERP01", tier: "t1", purpose: "ERP database: production stops without it", backup: "SQL native backups + Veeam" },
+      { name: "ACME-FS01", tier: "t1", purpose: "File server: shared drives", backup: "Veeam nightly (encrypted, restore from NAS)" }
     ],
     // Paths are set in App.loadSampleClient (they point at this
     // project's samples/ folder). The RMM check result:

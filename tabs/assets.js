@@ -15,20 +15,37 @@ App.tabs.assets = {
   // Draw this tab's content inside its panel.
   // "panel" is the <section> element for this tab.
   // "caseObj" is the selected case (never null here: app.js checks first).
+  // View filter (not saved): "all" or "critical" (on the business
+  // critical list, Client tab).
+  filter: "all",
+
   render: function (panel, caseObj) {
+    const tab = App.tabs.assets;
     const e = App.escapeHtml;
-    const items = caseObj.assets;
+    const items = caseObj.assets.filter(function (a) {
+      return tab.filter === "all" || App.criticalMatch(caseObj, a.name) !== null;
+    });
 
     let html = `
       <div class="panel-header">
-        <h2>Affected assets <span class="muted">(${items.length})</span></h2>
+        <h2>Affected assets <span class="muted">(${caseObj.assets.length})</span></h2>
         <button class="btn btn-primary" id="asset-add-btn">+ Add asset</button>
+      </div>
+      <div class="filter-bar">
+        <label class="filter-label">Show
+          <select id="asset-filter">
+            <option value="all"${tab.filter === "all" ? " selected" : ""}>All</option>
+            <option value="critical"${tab.filter === "critical" ? " selected" : ""}>Business critical only</option>
+          </select>
+        </label>
       </div>
     `;
 
-    if (items.length === 0) {
+    if (caseObj.assets.length === 0) {
       html += '<p class="muted">No affected assets yet. Tick "Add host / account to Assets" ' +
               'on an evidence item, or add one here.</p>';
+    } else if (items.length === 0) {
+      html += '<p class="muted">None of the affected assets are on the business critical list (Client tab).</p>';
     } else {
       const rows = items.map(function (a) {
         // Linked evidence as small tags, or "none".
@@ -42,9 +59,7 @@ App.tabs.assets = {
         return `
           <tr>
             <td class="nowrap"><strong>${e(a.id)}</strong></td>
-            <td>${e(a.name)}${App.assetLacksEdr(caseObj, a)
-              ? ' <span class="tag tag-warning" title="Not in the EDR device list (Client tab)">no EDR</span>'
-              : ""}</td>
+            <td>${e(a.name)} ${App.assetTagsHtml(caseObj, a)}</td>
             <td>${e(App.assetTypeLabel(a.type))}</td>
             <td class="nowrap">
               <span class="tag asset-${e(a.status)}">${e(App.assetStatusLabel(a.status))}</span>
@@ -80,6 +95,10 @@ App.tabs.assets = {
     document.getElementById("asset-add-btn").addEventListener("click", function () {
       App.tabs.assets.openForm(null);
     });
+    document.getElementById("asset-filter").addEventListener("change", function (event) {
+      tab.filter = event.target.value;
+      App.render();
+    });
     for (const button of panel.querySelectorAll("[data-edit]")) {
       button.addEventListener("click", function () {
         App.tabs.assets.openForm(button.dataset.edit);
@@ -114,6 +133,7 @@ App.tabs.assets = {
     }
     document.getElementById("asset-type").innerHTML = optionsHtml(App.ASSET_TYPES);
     document.getElementById("asset-status").innerHTML = optionsHtml(App.ASSET_STATUSES);
+    document.getElementById("asset-tier").innerHTML = optionsHtml(App.AD_TIERS);
 
     document.getElementById("asset-cancel").addEventListener("click", function () {
       dialog.close();
@@ -127,6 +147,7 @@ App.tabs.assets = {
         name: data.get("name"),
         type: data.get("type"),
         status: data.get("status"),
+        tier: data.get("tier"),
         notes: data.get("notes")
       };
 
@@ -171,6 +192,7 @@ App.tabs.assets = {
       form.elements["name"].value = asset.name;
       form.elements["type"].value = asset.type;
       form.elements["status"].value = asset.status;
+      form.elements["tier"].value = asset.tier || "";
       form.elements["notes"].value = asset.notes;
     }
 

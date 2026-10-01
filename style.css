@@ -168,12 +168,8 @@ body {
   white-space: nowrap;      /* never split a tag like "AS-003" over 2 lines */
 }
 
-/* One color per severity. The class name is built in sidebar.js
-   as "sev-" + severity, e.g. "sev-high". */
-.sev-low      { color: var(--sev-low); }
-.sev-medium   { color: var(--sev-medium); }
-.sev-high     { color: var(--sev-high); }
-.sev-critical { color: var(--sev-critical); }
+/* Priority tag colors (cases: P1-P3, action items: Critical-Low) are
+   the .prio-p1 ... .prio-p4 rules in the Action Items section below. */
 
 /* ---------- Buttons ---------- */
 
@@ -369,6 +365,15 @@ dialog .type-option input {
   margin-left: auto;
   font-size: 13px;
   color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Status changes list in the Edit case pop-up */
+.status-history {
+  margin: 4px 0 8px;
+  padding-left: 18px;
 }
 
 /* "Load sample data": a smaller, quieter button */
@@ -1084,13 +1089,26 @@ div.grow {
   margin: 0;
 }
 
-/* The big restore-order number (#1, #2, ...) */
+/* The restore-order label (BC-01, BC-02, ...) */
 .restore-order {
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--accent);
   text-align: center;
-  width: 36px;
+  width: 56px;
+}
+
+/* AD tier: Tier 0 red (whole domain), Tier 1 orange, Tier 2 grey.
+   Used on tags (Assets tab) and on the dropdown text (critical assets). */
+.tier-t0 { color: var(--sev-critical); font-weight: 600; }
+.tier-t1 { color: var(--sev-high); }
+.tier-t2 { color: var(--muted); }
+.tier-select { min-width: 90px; }
+
+/* "BC-01": on the business critical list (Client tab) */
+.tag-critical {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* Critical assets: the two description columns get more room */

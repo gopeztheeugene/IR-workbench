@@ -551,10 +551,15 @@ App.tabs.client = {
         // The first row can't move up; the last can't move down.
         const up = i === 0 ? " disabled" : "";
         const down = i === list.length - 1 ? " disabled" : "";
+        // AD tier dropdown (the tiers are explained under the heading).
+        const tierOptions = App.AD_TIERS.map(function (t) {
+          return `<option value="${e(t.key)}"${a.tier === t.key ? " selected" : ""}>${e(t.label)}</option>`;
+        }).join("");
         return `
           <tr>
-            <td class="restore-order">${i + 1}</td>
+            <td class="restore-order nowrap" title="#${i + 1} in the restore order">${e(App.criticalLabel(i + 1))}</td>
             <td>${cell("name", "ACME-DC01", " data-asset-picker")}</td>
+            <td><select class="cell-input tier-select tier-${e(a.tier || "none")}" data-critical="${e(a.id)}" data-key="tier">${tierOptions}</select></td>
             <td>${cell("purpose", "Domain controller: everything needs AD")}</td>
             <td>${cell("backup", "Veeam nightly, last restore test 08/2026")}</td>
             <td class="nowrap">
@@ -572,7 +577,7 @@ App.tabs.client = {
         <div class="table-wrap">
           <table class="data-table">
             <thead>
-              <tr><th>#</th><th>Asset</th><th>Role / why it matters</th>
+              <tr><th>#</th><th>Asset</th><th>AD tier</th><th>Role / why it matters</th>
                   <th>Backup / recovery notes</th><th></th></tr>
             </thead>
             <tbody>${rows.join("")}</tbody>
@@ -587,6 +592,9 @@ App.tabs.client = {
           <h3>Critical assets: restore / recovery order</h3>
           <button class="btn btn-small" data-action="add-critical">+ Add asset</button>
         </div>
+        <p class="muted small">BC-01 is #1 on the business critical list (restored first); the number follows the order.
+          AD tier: Tier 0 = identity / control plane (DCs, Entra Connect, AD CS, ADFS, PAM, backup / hypervisor / RMM with domain admin) ·
+          Tier 1 = servers and apps · Tier 2 = workstations and users.</p>
         ${body}
       </section>
     `;
@@ -811,6 +819,11 @@ App.tabs.client = {
           }
         }
         App.updatePerson(caseId, t.dataset.person, t.dataset.key, value);
+        App.render();
+      } else if (t.dataset.critical && t.tagName === "SELECT") {
+        // Critical asset's AD tier: save, then redraw (the dropdown's
+        // color, and the Tier 0 tag in the case header).
+        App.updateCriticalAsset(caseId, t.dataset.critical, t.dataset.key, t.value);
         App.render();
       }
     });

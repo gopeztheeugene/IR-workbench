@@ -88,7 +88,8 @@ App.tabs.summary = {
     const types = c.types.map(function (k) { return App.typeLabel(k); }).join(", ") || "none set";
     const facts = [
       "Case types: " + types,
-      "Severity: " + c.severity + " · Status: " + c.status + " · Opened: " + c.opened,
+      "Priority: " + App.labelFor(App.CASE_PRIORITIES, c.priority) +
+        " · Status: " + App.labelFor(App.CASE_STATUSES, c.status) + " · Opened: " + c.opened,
       c.evidence.length + " evidence · " + c.storyline.length + " storyline entries · " +
         c.iocs.length + " IOCs · " + affected + " affected assets"
     ];
@@ -245,8 +246,8 @@ App.tabs.summary = {
       const affectedKeys = affected.map(function (a) { return App.normalizeHost(a.name); });
       info.criticalAssets.forEach(function (ca, i) {
         if (ca.name && affectedKeys.includes(App.normalizeHost(ca.name))) {
-          facts.push({ kind: "warn", text: "Critical asset affected: " + ca.name + " (#" + (i + 1) +
-            " in restore order" + (ca.purpose ? ": " + ca.purpose : "") + ")." });
+          facts.push({ kind: "warn", text: "Critical asset affected: " + ca.name + " (" + App.criticalLabel(i + 1) +
+            ", #" + (i + 1) + " in restore order" + (ca.purpose ? ": " + ca.purpose : "") + ")." });
         }
       });
       if (hasType("ransomware") || hasType("wiper") || hasType("dos")) {
@@ -348,6 +349,14 @@ App.tabs.summary = {
       out.push({ key: "domain-credentials",
         text: "Assume credential theft across the domain: reset privileged and service accounts, krbtgt twice, and all user passwords; revoke cloud sessions.",
         basis: basis.join("; ") + "." });
+    }
+
+    // 1b. A Tier 0 asset is affected -> full domain compromise.
+    const tier0 = App.tier0Affected(c);
+    if (tier0.length) {
+      out.push({ key: "tier0-domain",
+        text: "Assume full domain compromise: the attacker reached a Tier 0 asset. Treat every account and every domain-joined system as untrusted until rebuilt or reset (krbtgt twice, all privileged and service accounts, Entra Connect).",
+        basis: "Tier 0 asset affected: " + tier0.map(function (a) { return a.name; }).join(", ") + "." });
     }
 
     // 2. BEC / account takeover -> stolen session tokens.

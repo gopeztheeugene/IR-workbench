@@ -93,6 +93,18 @@ App.ASSET_TYPES = [
   { key: "other",           label: "Other" }
 ];
 
+// Microsoft's AD tier model (Enterprise Access Model): what controlling
+// the asset gives an attacker. "" = not set.
+App.AD_TIERS = [
+  { key: "",   label: "Not set" },
+  { key: "t0", label: "Tier 0",
+    description: "Identity / control plane: domain controllers, Entra Connect, AD CS, ADFS, PAM; also backup servers, hypervisors, RMM with domain admin rights. Compromise = the whole domain." },
+  { key: "t1", label: "Tier 1",
+    description: "Servers and applications: file, SQL, ERP, app servers." },
+  { key: "t2", label: "Tier 2",
+    description: "User devices and accounts: workstations, laptops, users." }
+];
+
 // How far along an affected asset is. Order = typical progression.
 App.ASSET_STATUSES = [
   { key: "suspected",  label: "Suspected" },
@@ -248,8 +260,19 @@ App.DEVICE_SOURCES = [
   { key: "siem", label: "SIEM" }
 ];
 
-App.SEVERITIES = ["low", "medium", "high", "critical"];
-App.STATUSES = ["open", "contained", "closed"];
+// Case priority: P1 is the most urgent. (Before schema 3 this was
+// "severity" low / medium / high / critical; see App.upgradeCase.)
+App.CASE_PRIORITIES = [
+  { key: "p1", label: "P1" },
+  { key: "p2", label: "P2" },
+  { key: "p3", label: "P3" }
+];
+
+App.CASE_STATUSES = [
+  { key: "open",      label: "Open" },
+  { key: "contained", label: "Contained" },
+  { key: "closed",    label: "Closed" }
+];
 
 // ---------------------------------------------------------------
 // Helper functions. Other files change case data ONLY through
@@ -309,14 +332,64 @@ App.addCase = function (caseData) {
     title: (caseData.title || "").trim(),
     client: (caseData.client || "").trim(),
     types: types,                               // list of type keys
-    severity: caseData.severity || "medium",
+    priority: App.CASE_PRIORITIES.some(function (p) { return p.key === caseData.priority; })
+      ? caseData.priority : "p2",
     status: caseData.status || "open",
     opened: caseData.opened || App.todayString()
   });
+  // The starting status counts as the first status change.
+  newCase.statusHistory.push({ from: "", to: newCase.status, at: App.time.nowUtc() });
 
   App.state.cases.push(newCase);   // like Python's list.append()
   console.log("Case added:", newCase);
   return null;
+};
+
+// Change a case's details (the "Edit case" pop-up). The ticket ID can't
+// change: it names the case's folder on disk. Returns null if it worked,
+// or an error message. A status change is time-stamped in statusHistory.
+App.updateCaseDetails = function (caseId, data) {
+  const c = App.findCase(caseId);
+  if (c === null) {
+    return "No case with ID " + caseId + ".";
+  }
+  const keysOf = function (list) { return list.map(function (x) { return x.key; }); };
+  if (!keysOf(App.CASE_PRIORITIES).includes(data.priority)) {
+    return "Pick a priority.";
+  }
+  if (!keysOf(App.CASE_STATUSES).includes(data.status)) {
+    return "Pick a status.";
+  }
+  // "YYYY-MM-DD" only. /^...$/ is a regex, like Python's re.fullmatch.
+  const opened = (data.opened || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(opened)) {
+    return "Opened must be a date.";
+  }
+  const validTypes = keysOf(App.CASE_TYPES);
+
+  c.title = (data.title || "").trim();
+  c.client = (data.client || "").trim();
+  c.priority = data.priority;
+  c.opened = opened;
+  c.types = (data.types || []).filter(function (k) { return validTypes.includes(k); });
+  if (data.status !== c.status) {
+    c.statusHistory.push({ from: c.status, to: data.status, at: App.time.nowUtc() });
+    c.status = data.status;
+  }
+  console.log("Case details updated:", c.id);
+  return null;
+};
+
+// When the case last moved INTO a status (UTC text), or "" if never.
+// e.g. App.statusChangedAt(c, "contained") -> "2026-09-30T10:00:00"
+App.statusChangedAt = function (c, status) {
+  let at = "";
+  for (const change of c.statusHistory) {
+    if (change.to === status) {
+      at = change.at;             // keep going: the LAST one wins
+    }
+  }
+  return at;
 };
 
 // Every field a case has, with its starting value. Used for new cases
@@ -328,9 +401,12 @@ App.caseDefaults = function () {
     title: "",
     client: "",
     types: [],                // list of case type keys
-    severity: "medium",
-    status: "open",
+    priority: "p2",           // key from App.CASE_PRIORITIES (P1 = most urgent)
+    status: "open",           // key from App.CASE_STATUSES
     opened: App.todayString(),
+    // Every status change, oldest first: { from: "open", to: "contained",
+    // at: "UTC time" }. Cases from before this feature start empty.
+    statusHistory: [],
 
     // Evidence entries for this case (see App.addEvidence below).
     evidence: [],
@@ -456,11 +532,13 @@ App.TASK_STATUSES = [
   { key: "not-needed",  label: "Not needed",  open: false }
 ];
 
+// Action item priority. The keys stay p1-p4 (so sorting "p1" < "p2"
+// works and older files need no change); only the labels are words.
 App.TASK_PRIORITIES = [
-  { key: "p1", label: "P1 – Critical" },
-  { key: "p2", label: "P2 – High" },
-  { key: "p3", label: "P3 – Medium" },
-  { key: "p4", label: "P4 – Low" }
+  { key: "p1", label: "Critical" },
+  { key: "p2", label: "High" },
+  { key: "p3", label: "Medium" },
+  { key: "p4", label: "Low" }
 ];
 
 // Who does it: me, or one of the same sides as the IR team list.
@@ -655,6 +733,15 @@ App.CONTAINMENT_ACTIONS = [
   { key: "other", label: "Other (custom action)", targets: "assets", hint: "" }
 ];
 
+// Is this text exactly one of the catalog's actions (e.g. picked from the
+// Action pick list)? Returns that action, or null. Ignores upper / lower case.
+App.containmentActionForTitle = function (title) {
+  const wanted = String(title || "").trim().toLowerCase();
+  return App.CONTAINMENT_ACTIONS.find(function (a) {
+    return a.key !== "other" && a.label.toLowerCase() === wanted;
+  }) || null;
+};
+
 // ---- Evidence preservation: one action item per affected asset ----
 
 // What to preserve, by asset type (goes in the item's notes).
@@ -811,6 +898,17 @@ App.fillDefaults = function (target, defaults) {
 // add any missing fields, and make sure every ID counter is above the
 // highest ID in use (so a new EV-/AS-/ST-/IOC-... ID is never reused).
 App.upgradeCase = function (c) {
+  // Schema 3: "severity" (low / medium / high / critical) became
+  // "priority" (P1 / P2 / P3). Done BEFORE fillDefaults, which would
+  // otherwise give the case the default priority first.
+  if (c.severity !== undefined) {
+    const map = { critical: "p1", high: "p2", medium: "p3", low: "p3" };
+    if (c.priority === undefined) {
+      c.priority = map[c.severity] || "p2";
+    }
+    delete c.severity;            // like Python's: del c["severity"]
+  }
+
   App.fillDefaults(c, App.caseDefaults());
 
   // [the object, its list, its counter]
@@ -843,6 +941,12 @@ App.upgradeCase = function (c) {
     }
     if (t.auto === undefined) {
       t.auto = "";
+    }
+  }
+  // AD tier, added later to assets and critical assets.
+  for (const a of c.assets.concat(c.clientInfo.criticalAssets)) {
+    if (a.tier === undefined) {
+      a.tier = "";
     }
   }
 
@@ -1152,7 +1256,10 @@ App.cleanAsset = function (assetData) {
       // No type given? Guess it from the name.
       type: typeKeys.includes(assetData.type) ? assetData.type : App.guessAssetType(name),
       status: statusKeys.includes(assetData.status) ? assetData.status : "suspected",
-      notes: (assetData.notes || "").trim()
+      notes: (assetData.notes || "").trim(),
+      // AD tier set on the asset itself ("" = not set: then the tier from
+      // the Client tab's critical assets list is used, see App.assetTier).
+      tier: App.AD_TIERS.some(function (t) { return t.key === assetData.tier; }) ? assetData.tier : ""
     }
   };
 };
@@ -1667,13 +1774,77 @@ App.deletePerson = function (caseId, personId) {
 };
 
 // ---- Critical assets (restore / recovery order) ----
-// Each: { id: "CR-001", name, purpose, backup }. The list's ORDER is
-// the restore order: index 0 is restored first.
+// Each: { id: "CR-001", name, purpose, backup, tier }. The list's ORDER
+// is the restore order: index 0 is restored first. "CR-001" is only an
+// internal ID; on screen each one is shown by its POSITION: BC-01 is #1
+// on the business critical list (so the label changes when you reorder).
+
+// The on-screen label for position n (1 = first): "BC-01".
+App.CRITICAL_PREFIX = "BC";       // "Business Critical"; change it here
+App.criticalLabel = function (n) {
+  return App.CRITICAL_PREFIX + "-" + String(n).padStart(2, "0");
+};
+
+// Is this host / account on the client's critical assets list?
+// Compared like the EDR check (App.normalizeHost): no case, no domain.
+// Returns { position: 1, label: "BC-01", item: {...} } or null.
+App.criticalMatch = function (caseObj, name) {
+  const wanted = App.normalizeHost(name || "");
+  if (wanted === "") {
+    return null;
+  }
+  const list = caseObj.clientInfo.criticalAssets;
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].name && App.normalizeHost(list[i].name) === wanted) {
+      return { position: i + 1, label: App.criticalLabel(i + 1), item: list[i] };
+    }
+  }
+  return null;
+};
+
+// An affected asset's AD tier: its own if set, otherwise the tier given
+// to it on the critical assets list. Returns a key ("t0") or "".
+App.assetTier = function (caseObj, asset) {
+  if (asset.tier) {
+    return asset.tier;
+  }
+  const match = App.criticalMatch(caseObj, asset.name);
+  return match && match.item.tier ? match.item.tier : "";
+};
+
+// Affected (not clean) assets that are Tier 0.
+App.tier0Affected = function (caseObj) {
+  return caseObj.assets.filter(function (a) {
+    return a.status !== "clean" && App.assetTier(caseObj, a) === "t0";
+  });
+};
+
+// The tags after an affected asset's name: [no EDR] [Tier 0] [BC-01].
+// Hover a tag for details.
+App.assetTagsHtml = function (caseObj, asset) {
+  const e = App.escapeHtml;
+  const tags = [];
+  if (App.assetLacksEdr(caseObj, asset)) {
+    tags.push('<span class="tag tag-warning" title="Not in the EDR device list (Client tab)">no EDR</span>');
+  }
+  const tierKey = App.assetTier(caseObj, asset);
+  if (tierKey) {
+    const tier = App.AD_TIERS.find(function (t) { return t.key === tierKey; });
+    const from = asset.tier ? "" : " (from the critical assets list, Client tab)";
+    tags.push(`<span class="tag tier-${e(tierKey)}" title="${e(tier.description + from)}">${e(tier.label)}</span>`);
+  }
+  const match = App.criticalMatch(caseObj, asset.name);
+  if (match) {
+    const role = match.item.purpose ? ": " + match.item.purpose : "";
+    tags.push(`<span class="tag tag-critical" title="#${match.position} on the business critical / restore order list${e(role)}">${e(match.label)}</span>`);
+  }
+  return tags.join(" ");
+};
 
 App.addCriticalAsset = function (caseId) {
   const info = App.findCase(caseId).clientInfo;
   const id = "CR-" + String(info.nextCriticalNumber).padStart(3, "0");
-  info.criticalAssets.push({ id: id, name: "", purpose: "", backup: "" });
+  info.criticalAssets.push({ id: id, name: "", purpose: "", backup: "", tier: "" });
   info.nextCriticalNumber = info.nextCriticalNumber + 1;
   return id;
 };
