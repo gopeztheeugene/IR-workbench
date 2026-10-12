@@ -395,6 +395,45 @@ dialog .type-option input {
   margin-bottom: 12px;
 }
 
+/* A row of tab-wide switches, right-aligned (e.g. "Highlight empty fields") */
+.panel-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
+/* ---------- Highlight empty fields ---------- */
+
+.empty-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.empty-toggle input {
+  width: auto;
+  margin: 0;
+}
+
+/* Only while the switch is on (the panel has "show-empty"): empty fields
+   get a red border and a faint red background, like a form's required
+   fields. "!important" wins over each field's own border color. */
+.show-empty .is-empty {
+  border-color: var(--sev-critical) !important;
+  background-color: rgba(214, 92, 92, 0.08) !important;
+}
+
+/* An impact choice with nothing picked: red outline around the cards */
+.show-empty .impact-options.is-empty {
+  outline: 1px solid var(--sev-critical);
+  outline-offset: 4px;
+  border-radius: 6px;
+  background-color: transparent !important;
+}
+
 .panel-header h2 {
   margin: 0;
 }
@@ -935,6 +974,21 @@ dialog.dialog-wide {
   color: var(--sev-critical);
   font-weight: 600;
 }
+
+/* A softer (yellow) warning, e.g. "RMM not checked yet" */
+.tag-warning-soft {
+  color: var(--sev-medium);
+  font-weight: 600;
+}
+
+/* One RMM per line: tool, managed by, compromised?, tag, notes, ×.
+   Narrower dropdowns than the other Subscriptions rows, so it all fits
+   on one line (it still wraps on a narrow window). */
+.rmm-line select[data-key="tool"]        { width: 220px; }
+.rmm-line select[data-key="managedBy"]   { width: 125px; }
+.rmm-line select[data-key="compromised"] { width: 125px; }
+.rmm-line .rmm-other                     { width: 130px; }
+.rmm-line input.grow                     { min-width: 100px; }   /* notes: takes what's left */
 
 /* ---------- Device list cards ---------- */
 

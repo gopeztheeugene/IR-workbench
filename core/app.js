@@ -66,6 +66,12 @@ function renderCaseHeader() {
   const noEdrTag = noEdrCount === 0 ? "" :
     `<span class="tag tag-warning" title="See the Client tab, Device lists">⚠ ${noEdrCount} device${noEdrCount === 1 ? "" : "s"} without EDR</span>`;
 
+  // An RMM is marked compromised (Client tab, Subscriptions): shown on
+  // every tab, so nobody uses it for the response by mistake.
+  const badRmms = App.rmmsWith(c, ["yes"]);
+  const rmmTag = badRmms.length === 0 ? "" :
+    `<span class="tag tag-warning" title="Client tab, Subscriptions: don't use it to run scripts or for remote access">⚠ RMM compromised (${e(App.rmmNames(badRmms))})</span>`;
+
   // A Tier 0 asset (DC, Entra Connect, ...) is affected: the whole
   // domain is at risk, so this is shown on every tab too.
   const tier0 = App.tier0Affected(c);
@@ -92,6 +98,7 @@ function renderCaseHeader() {
       <span class="tag status-${e(c.status)}">${e(App.labelFor(App.CASE_STATUSES, c.status))}</span>
       ${noEdrTag}
       ${tier0Tag}
+      ${rmmTag}
       <span class="case-opened">${e(dates.join(" · "))}
         <button class="btn btn-small" data-action="edit-case" title="Change title, client, priority, status, opened date, case types">Edit case</button>
       </span>
@@ -175,6 +182,7 @@ App.renderChrome = function () {
 App.loadSettings();
 App.setupDisplayZone();
 App.setupAssetPickers();     // any box with data-asset-picker gets the asset list
+App.setupEmptyFields();      // the "Highlight empty fields" switch
 App.taskForm.setup();        // the shared add / edit action item pop-up
 App.setupNewCaseForm();
 App.setupEditCaseForm();     // "Edit case" in the case header

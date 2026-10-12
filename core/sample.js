@@ -181,7 +181,6 @@ App.SAMPLE_CLIENT = {
       "org.timeZone": "America/Chicago",
       "subscriptions.edr": "sentinelone",
       "subscriptions.siem": "sentinel",
-      "subscriptions.rmm": "kaseya",
       "subscriptions.firewallManaged": "yes",
       "subscriptions.firewallVendor": "fortigate",
       "subscriptions.irRetainer": "yes",
@@ -389,6 +388,11 @@ App.loadSampleClient = function (caseId) {
       (folder + "/samples/" + source + "_devices.csv").replaceAll("/", "\\"));
   }
   App.setRmmCheck(caseId, sample.rmmCheck);
+  // One RMM: Kaseya VSA, run by Thrive, not checked yet (so the
+  // "not checked" warnings show).
+  const rmmId = App.addRmm(caseId);
+  App.updateRmm(caseId, rmmId, "tool", "kaseya-vsa");
+  App.updateRmm(caseId, rmmId, "managedBy", "msp");
 };
 
 // Add every sample case that isn't already loaded.

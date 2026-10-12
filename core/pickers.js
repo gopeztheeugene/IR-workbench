@@ -62,6 +62,92 @@ App.refreshPicker = function (input) {
 // Old name, kept so nothing breaks.
 App.refreshAssetPicker = App.refreshPicker;
 
+// ---------------------------------------------------------------
+// HIGHLIGHT EMPTY FIELDS (like Google Forms' red "required" boxes)
+// ---------------------------------------------------------------
+// A tab that wants it (Client, Summary and Reports):
+//   1. puts App.emptyToggleHtml() somewhere at the top, and
+//   2. calls App.markEmptyFields(panel) at the end of its render().
+// The switch is one shared setting (App.state.highlightEmpty, saved
+// with the other view settings). When it's on, the panel gets the class
+// "show-empty", and every empty field gets "is-empty"; the CSS draws
+// those red. Typing in a field updates it straight away (see below).
+
+// The fields that count: anything that saves to the case.
+App.EMPTY_FIELD_SELECTOR = "[data-field], [data-rmm], [data-person], [data-critical], [data-assumption]";
+
+// Is this one field empty? Tick boxes and radio buttons aren't checked
+// one by one (an unticked box isn't "empty"); their groups are, below.
+App.isEmptyField = function (el) {
+  if (el.type === "checkbox" || el.type === "radio" || el.type === "button") {
+    return false;
+  }
+  // A greyed-out (disabled) field isn't expected to be filled in, e.g.
+  // the no-EDR list once "All identified devices have EDR" is ticked.
+  if (el.disabled) {
+    return false;
+  }
+  return String(el.value || "").trim() === "";
+};
+
+// Mark the empty fields in one panel and update its count. Returns the count.
+App.markEmptyFields = function (panel) {
+  if (!panel) {
+    return 0;
+  }
+  let count = 0;
+  for (const el of panel.querySelectorAll(App.EMPTY_FIELD_SELECTOR)) {
+    const empty = App.isEmptyField(el);
+    el.classList.toggle("is-empty", empty);   // toggle(name, true/false) = add or remove
+    if (empty) {
+      count = count + 1;
+    }
+  }
+  // Choice groups (the impact option cards): empty when nothing in the
+  // group is picked.
+  for (const group of panel.querySelectorAll(".impact-options")) {
+    const empty = group.querySelector("input:checked") === null;
+    group.classList.toggle("is-empty", empty);
+    if (empty) {
+      count = count + 1;
+    }
+  }
+  panel.classList.toggle("show-empty", App.state.highlightEmpty);
+  for (const label of panel.querySelectorAll("[data-empty-count]")) {
+    label.textContent = "(" + count + " empty)";
+  }
+  return count;
+};
+
+// The switch, for the top of a tab.
+App.emptyToggleHtml = function () {
+  return `<label class="empty-toggle" title="Outline every empty field in red, like a form's required fields">
+            <input type="checkbox" data-highlight-empty${App.state.highlightEmpty ? " checked" : ""}>
+            Highlight empty fields <span class="muted" data-empty-count></span>
+          </label>`;
+};
+
+// Runs once at startup (called from app.js).
+App.setupEmptyFields = function () {
+  // The switch: save the setting, then redraw.
+  document.addEventListener("change", function (event) {
+    if (event.target.matches("[data-highlight-empty]")) {
+      App.state.highlightEmpty = event.target.checked;
+      App.saveSettings();
+      App.render();
+    }
+  });
+  // Typing or picking in a field: re-mark just that panel, so the red
+  // goes away (or comes back) straight away, without a full redraw.
+  function recheck(event) {
+    if (event.target.matches && event.target.matches(App.EMPTY_FIELD_SELECTOR)) {
+      App.markEmptyFields(event.target.closest(".panel"));
+    }
+  }
+  document.addEventListener("input", recheck);
+  document.addEventListener("change", recheck);
+};
+
 // Runs once at startup (called from app.js).
 // "focusin" fires whenever any element on the page gets focus; we only
 // act when it's a box marked data-asset-picker or data-ioc-picker.

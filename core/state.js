@@ -25,7 +25,11 @@ const App = {
     // Is the Containment Strategy's Assumptions box open? Starts closed
     // every time the app opens (NOT saved), and stays open while you work
     // in it, so adding an assumption (which redraws) doesn't fold it away.
-    assumptionsOpen: false
+    assumptionsOpen: false,
+
+    // "Highlight empty fields" switch (Client and Summary and Reports
+    // tabs, see core/pickers.js). Remembered in localStorage.
+    highlightEmpty: false
   },
 
   // Each tab file adds itself here, e.g. App.tabs.client = { ... }.
@@ -172,6 +176,96 @@ App.TLP_LEVELS = [
   { key: "red",          label: "TLP:RED" }
 ];
 
+// ---- RMM tools (Client tab, Subscriptions) ----
+// A client can have several RMMs. Each is one line in
+// clientInfo.subscriptions.rmms:
+//   { id: "RM-001", tool: "kaseya-vsa", other: "", managedBy: "msp",
+//     compromised: "no", notes: "how it was verified", checkedAt: "UTC" }
+// Attackers abuse RMM tools to push malware to every managed device, and
+// the user runs IR scripts through the RMM's remote shell as SYSTEM, so
+// each one records whether it's compromised.
+
+// Common RMM / remote management tools.
+App.RMM_TOOLS = [
+  { key: "",                 label: "Choose RMM" },
+  { key: "kaseya-vsa",       label: "Kaseya VSA" },
+  { key: "cw-automate",      label: "ConnectWise Automate" },
+  { key: "cw-screenconnect", label: "ConnectWise ScreenConnect" },
+  { key: "datto-rmm",        label: "Datto RMM" },
+  { key: "nable-ncentral",   label: "N-able N-central" },
+  { key: "nable-nsight",     label: "N-able N-sight" },
+  { key: "ninjaone",         label: "NinjaOne" },
+  { key: "atera",            label: "Atera" },
+  { key: "syncro",           label: "Syncro" },
+  { key: "action1",          label: "Action1" },
+  { key: "me-endpoint",      label: "ManageEngine Endpoint Central" },
+  { key: "other",            label: "Other (specify)" }
+];
+
+// "Compromised?" answers. "" = not checked yet.
+App.RMM_COMPROMISED = [
+  { key: "",          label: "Not checked" },
+  { key: "no",        label: "No" },
+  { key: "suspected", label: "Suspected" },
+  { key: "yes",       label: "Yes" }
+];
+
+// What to look at before answering "No" (shown as a hint).
+App.RMM_CHECKS = "RMM audit log: unknown admin logins, remote sessions, scripts or agent procedures pushed; " +
+  "admin accounts: MFA on, no new or changed admins / API keys; server / SaaS version patched against known RMM exploits; " +
+  "no unknown agents, sites or tenants; RMM not seen in the Storyline (e.g. attacker remote control).";
+
+// One RMM's display name: "Kaseya VSA", or the "Other" text.
+App.rmmLabel = function (r) {
+  if (r.tool === "other") {
+    return r.other || "Other RMM";
+  }
+  return App.labelFor(App.RMM_TOOLS, r.tool);
+};
+
+// The RMMs in use (a tool picked). Empty list = no RMM.
+App.rmmsInUse = function (caseObj) {
+  return caseObj.clientInfo.subscriptions.rmms.filter(function (r) { return r.tool !== ""; });
+};
+
+// The RMMs whose compromised answer is one of "answers", e.g.
+// App.rmmsWith(c, ["yes"]) = the compromised ones.
+App.rmmsWith = function (caseObj, answers) {
+  return App.rmmsInUse(caseObj).filter(function (r) { return answers.includes(r.compromised); });
+};
+
+// Names joined for messages: "Kaseya VSA, NinjaOne".
+App.rmmNames = function (list) {
+  return list.map(App.rmmLabel).join(", ");
+};
+
+App.addRmm = function (caseId) {
+  const s = App.findCase(caseId).clientInfo.subscriptions;
+  const id = "RM-" + String(s.nextRmmNumber).padStart(3, "0");
+  s.rmms.push({ id: id, tool: "", other: "", managedBy: "", compromised: "", notes: "", checkedAt: "" });
+  s.nextRmmNumber = s.nextRmmNumber + 1;
+  return id;
+};
+
+// Change one field of an RMM line. Changing the compromised answer
+// stamps checkedAt (UTC) automatically; "Not checked" clears it.
+App.updateRmm = function (caseId, rmmId, key, value) {
+  const r = App.findCase(caseId).clientInfo.subscriptions.rmms.find(function (x) { return x.id === rmmId; });
+  if (!r || !(key in r) || key === "id" || key === "checkedAt") {
+    return false;
+  }
+  if (key === "compromised" && value !== r.compromised) {
+    r.checkedAt = value === "" ? "" : App.time.nowUtc();
+  }
+  r[key] = value;
+  return true;
+};
+
+App.deleteRmm = function (caseId, rmmId) {
+  const s = App.findCase(caseId).clientInfo.subscriptions;
+  s.rmms = s.rmms.filter(function (x) { return x.id !== rmmId; });
+};
+
 // Summary and Reports: how the incident was detected. "other" shows a
 // "specify" box (saved in summary.detectionSourceOther).
 App.DETECTION_SOURCES = [
@@ -204,12 +298,6 @@ App.CLIENT_CHOICES = {
     { key: "elastic",   label: "Elastic" },
     { key: "other",     label: "Other (specify)" },
     { key: "none",      label: "None" }
-  ],
-  rmm: [
-    { key: "",       label: "Not set" },
-    { key: "kaseya", label: "Kaseya" },
-    { key: "other",  label: "Other (specify)" },
-    { key: "none",   label: "N/A" }
   ],
   firewallVendor: [
     { key: "",          label: "Not set" },
@@ -733,6 +821,42 @@ App.CONTAINMENT_ACTIONS = [
   { key: "other", label: "Other (custom action)", targets: "assets", hint: "" }
 ];
 
+// Groups for the containment action dropdowns, in display order. To move
+// an action to another group, move its key here. "Other" isn't in a
+// group: it's listed last on its own.
+App.CONTAINMENT_GROUPS = [
+  { label: "Endpoint",        keys: ["isolate-edr", "kill-process", "block-lateral"] },
+  { label: "Identities",      keys: ["disable-accounts", "revoke-sessions", "reset-credentials"] },
+  { label: "Network",         keys: ["network-segmentation", "disable-vpn", "fw-deny", "sinkhole", "block-iocs"] },
+  { label: "Virtual / Cloud", keys: ["hypervisor-isolation", "protect-backups"] },
+  { label: "Email and SaaS",  keys: ["purge-emails", "remove-inbox-rules", "remove-app-consents"] }
+];
+
+// The <option>s for a containment action dropdown, grouped with
+// <optgroup> (a bold heading the options sit under; it can't be picked).
+// selectedKey = the option to pre-select, or "" for none.
+App.containmentOptionsHtml = function (selectedKey) {
+  const e = App.escapeHtml;
+  function option(a) {
+    return `<option value="${e(a.key)}"${a.key === selectedKey ? " selected" : ""}>${e(a.label)}</option>`;
+  }
+  const grouped = [];
+  let html = App.CONTAINMENT_GROUPS.map(function (g) {
+    const options = g.keys
+      .map(function (key) { return App.CONTAINMENT_ACTIONS.find(function (a) { return a.key === key; }); })
+      .filter(Boolean)                    // skip a key with no action (typo safety)
+      .map(function (a) { grouped.push(a.key); return option(a); })
+      .join("");
+    return `<optgroup label="${e(g.label)}">${options}</optgroup>`;
+  }).join("");
+  // Anything not in a group ("Other", or a new action not grouped yet) goes last.
+  html += App.CONTAINMENT_ACTIONS
+    .filter(function (a) { return !grouped.includes(a.key); })
+    .map(option)
+    .join("");
+  return html;
+};
+
 // Is this text exactly one of the catalog's actions (e.g. picked from the
 // Action pick list)? Returns that action, or null. Ignores upper / lower case.
 App.containmentActionForTitle = function (title) {
@@ -909,6 +1033,28 @@ App.upgradeCase = function (c) {
     delete c.severity;            // like Python's: del c["severity"]
   }
 
+  // Schema 4: one RMM (subscriptions.rmm + rmmOther + rmmTrust...) became
+  // a list of RMMs (subscriptions.rmms). Also done before fillDefaults.
+  const subs = c.clientInfo && c.clientInfo.subscriptions;
+  if (subs && subs.rmm !== undefined) {
+    subs.rmms = subs.rmms || [];
+    if (subs.rmm !== "" && subs.rmm !== "none") {
+      const answer = { verified: "no", suspected: "suspected", compromised: "yes" };
+      subs.rmms.push({
+        id: "RM-001",
+        tool: subs.rmm === "kaseya" ? "kaseya-vsa" : "other",
+        other: subs.rmm === "kaseya" ? "" : (subs.rmmOther || ""),
+        managedBy: "",
+        compromised: answer[subs.rmmTrust] || "",
+        notes: subs.rmmTrustNotes || "",
+        checkedAt: subs.rmmTrustAt || ""
+      });
+    }
+    for (const old of ["rmm", "rmmOther", "rmmTrust", "rmmTrustBy", "rmmTrustAt", "rmmTrustNotes"]) {
+      delete subs[old];
+    }
+  }
+
   App.fillDefaults(c, App.caseDefaults());
 
   // [the object, its list, its counter]
@@ -920,7 +1066,8 @@ App.upgradeCase = function (c) {
     [c, "tasks", "nextTaskNumber"],
     [c.summary.containment, "assumptions", "nextAssumptionNumber"],
     [c.clientInfo, "people", "nextPersonNumber"],
-    [c.clientInfo, "criticalAssets", "nextCriticalNumber"]
+    [c.clientInfo, "criticalAssets", "nextCriticalNumber"],
+    [c.clientInfo.subscriptions, "rmms", "nextRmmNumber"]
   ];
   for (const [owner, listKey, counterKey] of counters) {
     let highest = 0;
@@ -1675,7 +1822,9 @@ App.newClientInfo = function () {
     subscriptions: {
       edr: "", edrOther: "",
       siem: "", siemOther: "",
-      rmm: "", rmmOther: "",
+      // RMM tools, one line each (see App.addRmm). Empty = no RMM.
+      rmms: [],
+      nextRmmNumber: 1,
       firewallManaged: "", firewallVendor: "", firewallOther: "",
       irRetainer: "", binalyze: ""
     },
@@ -1725,7 +1874,10 @@ App.newClientInfo = function () {
       // Result of checking the RMM CSV's "EDR" column (App.setRmmCheck),
       // or null if not checked yet.
       rmmCheck: null,
-      manualNoEdr: ""       // typed list, one device per line
+      manualNoEdr: "",      // typed list, one device per line
+      // Ticked = "All identified devices have EDR installed": confirmed
+      // full coverage, so the empty list above is expected, not missing.
+      allHaveEdr: false
     }
   };
 };
@@ -1988,6 +2140,9 @@ App.loadSettings = function () {
     if (saved.displayTimeZone && App.isValidZone(saved.displayTimeZone)) {
       App.state.displayTimeZone = saved.displayTimeZone;
     }
+    if (typeof saved.highlightEmpty === "boolean") {
+      App.state.highlightEmpty = saved.highlightEmpty;
+    }
     console.log("Settings loaded:", saved);
   } catch (err) {
     console.warn("Could not load settings:", err);
@@ -1999,7 +2154,8 @@ App.saveSettings = function () {
   try {
     // JSON.stringify turns an object into text, like Python's json.dumps().
     localStorage.setItem(App.SETTINGS_KEY, JSON.stringify({
-      displayTimeZone: App.state.displayTimeZone
+      displayTimeZone: App.state.displayTimeZone,
+      highlightEmpty: App.state.highlightEmpty
     }));
   } catch (err) {
     console.warn("Could not save settings:", err);

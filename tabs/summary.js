@@ -24,11 +24,13 @@ App.tabs.summary = {
     const tab = App.tabs.summary;
     // No "Summary and Reports" heading: the tab button already says it.
     panel.innerHTML = `
+      <div class="panel-toolbar">${App.emptyToggleHtml()}</div>
       ${tab.summaryHtml(caseObj)}
       ${tab.impactHtml(caseObj)}
       ${tab.strategyHtml(caseObj)}
     `;
     App.time.fillZoneHints();     // "(UTC)" / "(Asia/Manila, UTC+08:00)"
+    App.markEmptyFields(panel);   // red outlines if "Highlight empty fields" is on
   },
 
   // The user's IR principles, shown as "?" reminders next to section titles.
@@ -338,7 +340,9 @@ App.tabs.summary = {
 
     // 1. Foothold + telemetry gap -> credential theft across the domain.
     const foothold = affected.length > 0 || c.storyline.length > 0;
-    const edrChecked = c.clientInfo.devices.rmmCheck !== null;
+    // Coverage is confirmed by the RMM check, or by ticking "All
+    // identified devices have EDR installed" (Client tab).
+    const edrChecked = c.clientInfo.devices.rmmCheck !== null || c.clientInfo.devices.allHaveEdr;
     if (foothold && (noEdr > 0 || !edrChecked)) {
       const basis = [];
       basis.push(noEdr > 0 ? noEdr + " devices without EDR" : "EDR coverage not confirmed (RMM not checked)");
@@ -357,6 +361,19 @@ App.tabs.summary = {
       out.push({ key: "tier0-domain",
         text: "Assume full domain compromise: the attacker reached a Tier 0 asset. Treat every account and every domain-joined system as untrusted until rebuilt or reset (krbtgt twice, all privileged and service accounts, Entra Connect).",
         basis: "Tier 0 asset affected: " + tier0.map(function (a) { return a.name; }).join(", ") + "." });
+    }
+
+    // 1c. The RMM is compromised (or suspected) -> it reached every
+    //     managed device.
+    const badRmms = App.rmmsWith(c, ["yes", "suspected"]);
+    if (badRmms.length) {
+      out.push({ key: "rmm-compromised",
+        text: "Assume the attacker could run code on every device managed by " + App.rmmNames(badRmms) +
+              ": treat all managed devices as in scope, and don't use the RMM for the response.",
+        basis: badRmms.map(function (r) {
+          return App.rmmLabel(r) + " marked " + (r.compromised === "yes" ? "compromised" : "suspected") +
+                 (r.notes ? " (" + r.notes + ")" : "");
+        }).join("; ") + " (Client tab)." });
     }
 
     // 2. BEC / account takeover -> stolen session tokens.
@@ -522,9 +539,8 @@ App.tabs.summary = {
       `;
     }).join("");
 
-    const typeOptions = App.CONTAINMENT_ACTIONS
-      .map(function (a) { return `<option value="${e(a.key)}">${e(a.label)}</option>`; })
-      .join("");
+    // Grouped by Endpoint / Identities / Network / ... (App.CONTAINMENT_GROUPS).
+    const typeOptions = App.containmentOptionsHtml("");
 
     return `
       <div class="impact-category">

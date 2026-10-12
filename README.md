@@ -22,20 +22,21 @@ No server, no install, no build step, no internet connection needed.
 - **Edit case** changes the title, client, priority, status, opened date, and case types (the ticket ID stays fixed). Status changes are time-stamped, and the header shows when the case was contained and closed. Closing a case with open action items asks you to confirm first.
 
 **Client**
-- Organization details, and one line per subscription: EDR, SIEM, RMM, managed firewall, IR retainer (with a warning if the client isn't in the Binalyze console yet).
+- Organization details, and one line per subscription: EDR, SIEM, managed firewall, IR retainer (with a warning if the client isn't in the Binalyze console yet).
+- **RMM tools**, one line each (Kaseya VSA, ConnectWise, Datto, N-able, NinjaOne, Atera, and more): who manages it (Client Owned, Thrive, 3rd Party) and **Compromised (Y/N)**. Until an RMM is confirmed not compromised, the script sections warn before you run anything through its remote shell; a compromised RMM is flagged on every tab.
 - The incident response team and contacts, each marked Client Owned, Thrive, or 3rd Party.
 - Cyber insurance, and a backups section: who's responsible, product, coverage, retention, RPO, storage location, and immutability (red tags for gaps).
 - Environment, one line per item: identity, email, network, VPN types, a clickable network topology link, the **out-of-band channel** to use if email may be compromised, cloud, and OS mix.
 - **Critical assets in restore order**, labelled BC-01, BC-02… (business critical, #1 restored first), each with its **AD tier** (Microsoft's tier model: Tier 0 identity / control plane, Tier 1 servers and apps, Tier 2 workstations and users).
 - **Active Directory triage** and **logging & evidence check**: paste script output, and download or copy the built-in PowerShell scripts (as a script or a base64 one-liner).
-- Links to the client's device list CSVs on disk. **Devices without EDR** are found from the RMM export's `EDR` column and highlighted on every tab.
+- Links to the client's device list CSVs on disk. **Devices without EDR** are found from the RMM export's `EDR` column and highlighted on every tab. Or tick "All identified devices have EDR installed" (you're warned if that contradicts the list).
 
 **Summary and Reports**
 - **Incident summary:** detected at, detection source (SentinelOne, Defender, Sentinel, FortiEDR, FortiSIEM, Elastic, SaaS Alerts, threat hunt, or other), overview, and facts pulled from the other tabs.
 - **Impact assessment** using the NIST SP 800-61 categories: functional impact, information impact, and recoverability effort, each with the NIST definitions, a justification, and comments drawn from the case.
 - **Containment strategy:**
   - Assumptions, with suggestions from the case (e.g. assume credential theft across the domain when there's a foothold and EDR gaps).
-  - Containment actions picked from a catalog (disable accounts, isolate host, revoke sessions, block lateral movement, firewall deny, and more), each with a "Before you do this" hint.
+  - Containment actions picked from a catalog (disable accounts, isolate host, revoke sessions, block lateral movement, firewall deny, and more), grouped by Endpoint, Identities, Network, Virtual / Cloud, and Email and SaaS, each with a "Before you do this" hint.
   - A containment window: everything is contained at once, and actions without their own due time use it.
 - Hover reminders (the circled **?**) next to the section titles.
 
@@ -69,6 +70,9 @@ No server, no install, no build step, no internet connection needed.
 - Tags after each name show what matters at a glance: `[no EDR] [Tier 0] [BC-01]`. The BC tag appears when the asset is on the client's critical assets list; the tier comes from the asset or that list. A filter shows business critical assets only.
 - If a **Tier 0** asset is affected, a warning shows in the case header on every tab, and the containment strategy suggests assuming full domain compromise.
 - Assets are added automatically from evidence when you tick "affected". Host fields across the app can pick from this list.
+
+**Filling in forms**
+- **Highlight empty fields** (Client and Summary and Reports tabs) outlines every empty field in red, like a form's required fields, with a count. It updates as you type.
 
 **Saving**
 - Each case is a folder: `case.json` (all its data), `.history/` (last 20 older versions), `evidence/` (local evidence files), `exports/` (CSV exports).

@@ -23,7 +23,7 @@ App.tabs.client = {
     const tab = App.tabs.client;
     const missing = App.devicesWithoutEdr(caseObj);
 
-    let html = '<div class="panel-header"><h2>Client</h2></div>';
+    let html = `<div class="panel-header"><h2>Client</h2>${App.emptyToggleHtml()}</div>`;
 
     // Devices without EDR: a red banner at the very top so it can't be missed.
     if (missing.length > 0) {
@@ -43,6 +43,7 @@ App.tabs.client = {
 
     panel.innerHTML = html;
     App.time.fillZoneHints();     // "(UTC)" / "(Asia/Manila, UTC+08:00)" on time labels
+    App.markEmptyFields(panel);   // red outlines if "Highlight empty fields" is on
   },
 
   // ---------------------------------------------------------------
@@ -176,7 +177,7 @@ App.tabs.client = {
         <h3>Subscriptions</h3>
         ${toolRow("EDR", "subscriptions.edr", C.edr, "subscriptions.edrOther")}
         ${toolRow("SIEM", "subscriptions.siem", C.siem, "subscriptions.siemOther")}
-        ${toolRow("RMM", "subscriptions.rmm", C.rmm, "subscriptions.rmmOther")}
+        ${tab.rmmRowsHtml(c)}
         <div class="sub-row">
           <span class="sub-label">Managed firewall</span>
           ${tab.bareSelect(c, "subscriptions.firewallManaged", C.yesNo)}
@@ -326,7 +327,7 @@ App.tabs.client = {
       ${tab.backupsHtml(c)}
       ${tab.criticalHtml(c)}
       ${tab.adTriageHtml(c)}
-      ${tab.triageCheckHtml()}
+      ${tab.triageCheckHtml(c)}
     `;
   },
 
@@ -409,6 +410,87 @@ App.tabs.client = {
     `;
   },
 
+  // RMM tools: ONE line per RMM, e.g.
+  //   RMM  [Kaseya VSA ▾] [Thrive ▾] Compromised? [No ▾] ✓ [how verified...] [×]
+  // Inputs carry data-rmm="RM-001" + data-key="tool", so the delegated
+  // listeners in setup() know which RMM and which field to save.
+  rmmRowsHtml: function (c) {
+    const e = App.escapeHtml;
+    const rmms = c.clientInfo.subscriptions.rmms;
+
+    // A dropdown for one field of one RMM.
+    function select(r, key, list) {
+      return `<select data-rmm="${e(r.id)}" data-key="${key}">` + list.map(function (o) {
+        return `<option value="${e(o.key)}"${r[key] === o.key ? " selected" : ""}>${e(o.label)}</option>`;
+      }).join("") + "</select>";
+    }
+    // Managed by: "Managed by..." when not set, then Client / Thrive / 3rd Party.
+    const sides = [{ key: "", label: "Managed by..." }].concat(App.PERSON_SIDES);
+
+    // A small colored ✓ / ⚠ after the answer, so it stands out (the
+    // dropdown already says the answer in words). Hover: what it means,
+    // and when it was answered.
+    function answerTag(r) {
+      const when = r.checkedAt ? " Answered " + App.taskForm.when(r.checkedAt) + "." : "";
+      const tags = {
+        "":        ["tag-warning-soft", "⚠", "Not checked yet: don't rely on it until you've checked."],
+        no:        ["copy-ok", "✓", "Not compromised: safe to use for the response."],
+        suspected: ["tag-warning", "⚠", "Suspected compromised: don't rely on it."],
+        yes:       ["tag-warning", "⚠", "Compromised: don't use it for the response."]
+      };
+      const t = tags[r.compromised];
+      return t ? `<span class="tag ${t[0]}" title="${e(t[2] + when)}">${t[1]}</span>` : "";
+    }
+
+    const addButton = '<button class="btn btn-small" data-action="add-rmm" title="Add another RMM">+ Add</button>';
+    if (rmms.length === 0) {
+      return `
+        <div class="sub-row">
+          <span class="sub-label">RMM ${addButton}</span>
+          <span class="muted small">No RMM listed (none in use).</span>
+        </div>`;
+    }
+
+    const rows = rmms.map(function (r, i) {
+      const specify = r.tool === "other"
+        ? `<input class="rmm-other" data-rmm="${e(r.id)}" data-key="other" value="${e(r.other)}" placeholder="Which RMM?">`
+        : "";
+      return `
+        <div class="sub-row rmm-line">
+          <span class="sub-label">${i === 0 ? "RMM " + addButton : ""}</span>
+          ${select(r, "tool", App.RMM_TOOLS)}
+          ${specify}
+          ${select(r, "managedBy", sides)}
+          <span class="sub-inline-label">Compromised (Y/N)</span>
+          ${select(r, "compromised", App.RMM_COMPROMISED)}
+          ${answerTag(r)}
+          <input class="grow" data-rmm="${e(r.id)}" data-key="notes" value="${e(r.notes)}"
+                 placeholder="How you verified it" title="${e("Check: " + App.RMM_CHECKS)}">
+          <button class="btn btn-small btn-danger" data-action="remove-rmm" data-id="${e(r.id)}" title="Remove this RMM">×</button>
+        </div>`;
+    }).join("");
+    return rows;
+  },
+
+  // A warning above a "Get the script" row while any RMM in use (the
+  // scripts run through an RMM's remote shell) isn't answered "No". "" if fine.
+  rmmScriptWarningHtml: function (c) {
+    const e = App.escapeHtml;
+    const unsafe = App.rmmsWith(c, ["", "suspected", "yes"]);
+    if (unsafe.length === 0) {
+      return "";
+    }
+    const parts = unsafe.map(function (r) {
+      const answer = r.compromised === "" ? "not checked" : (r.compromised === "yes" ? "compromised" : "suspected compromised");
+      return App.rmmLabel(r) + " (" + answer + ")";
+    });
+    const anyYes = unsafe.some(function (r) { return r.compromised === "yes"; });
+    return `<p class="error small">⚠ ${e(parts.join(", "))}: see Subscriptions. Running this through
+      a remote shell as SYSTEM could expose the script, its output, or your session to the attacker.
+      ${anyYes ? "Don't use a compromised RMM: use another channel (e.g. Binalyze or a direct admin session)."
+               : "Check the RMM first, or use another channel."}</p>`;
+  },
+
   // REUSABLE: the "Get the script" row for any built-in script
   // (App.SCRIPTS in core/scripts.js): Download / Copy script / Copy
   // one-liner, plus a hint about remote shells. "key" is the script's
@@ -442,7 +524,7 @@ App.tabs.client = {
   // Invoke-TriageCheck.ps1: can we build a storyline on a host, and from
   // what? (audit policy, log sizes / how far back, log clears, disk
   // artifacts, EDR / log-shipping agents). Run it on each host of interest.
-  triageCheckHtml: function () {
+  triageCheckHtml: function (c) {
     const tab = App.tabs.client;
     return `
       <section class="client-section">
@@ -454,6 +536,7 @@ App.tabs.client = {
           (Prefetch, Amcache, SRUM, shadow copies, PSReadLine, USN, Defender MPLog), and
           EDR / log-shipping agents. Needs admin (SYSTEM is fine).
         </p>
+        ${tab.rmmScriptWarningHtml(c)}
         ${tab.scriptToolsHtml("triagecheck")}
         <p class="muted small script-hint">
           ⚠ Run the one-liner as admin or SYSTEM. Its <code>#Requires -RunAsAdministrator</code> check
@@ -506,6 +589,7 @@ App.tabs.client = {
     return `
       <section class="client-section">
         <h3>Active Directory triage <span class="muted small">(adtriage.ps1 output)</span></h3>
+        ${App.tabs.client.rmmScriptWarningHtml(c)}
         ${App.tabs.client.scriptToolsHtml("adtriage")}
         <div class="sub-row">
           <span class="sub-label">Ran on</span>
@@ -600,6 +684,25 @@ App.tabs.client = {
     `;
   },
 
+  // "All identified devices have EDR installed" tick box (Device lists).
+  // If it's ticked but devices without EDR are still listed (RMM check or
+  // the manual list), warn: one of the two is wrong.
+  allHaveEdrHtml: function (c) {
+    const d = c.clientInfo.devices;
+    const missing = App.devicesWithoutEdr(c).length;
+    const conflict = d.allHaveEdr && missing > 0
+      ? `<span class="tag tag-warning">⚠ but ${missing} device${missing === 1 ? " is" : "s are"} listed without EDR (RMM check / list below): check which is right</span>`
+      : "";
+    return `
+      <div class="check-row all-edr">
+        <label class="check-inline">
+          <input type="checkbox" data-field="devices.allHaveEdr"${d.allHaveEdr ? " checked" : ""}>
+          All identified devices have EDR installed
+        </label>
+        ${conflict}
+      </div>`;
+  },
+
   scopeHtml: function (c) {
     const tab = App.tabs.client;
     return `
@@ -625,6 +728,7 @@ App.tabs.client = {
     // Vendor names from Subscriptions, e.g. "EDR (SentinelOne)".
     const subs = c.clientInfo.subscriptions;
     function vendorName(key) {
+      if (key === "rmm") { return App.rmmNames(App.rmmsInUse(c)); }   // several RMMs
       if (subs[key] === "other") { return subs[key + "Other"]; }
       if (subs[key] === "") { return ""; }
       return App.labelFor(App.CLIENT_CHOICES[key], subs[key]);
@@ -714,9 +818,13 @@ App.tabs.client = {
           <em>Copy as path</em>). To open a CSV in Excel: Copy path, then Win + R, paste, Enter.</p>
         <div class="device-cards">${cards.join("")}</div>
         ${coverage}
+        ${tab.allHaveEdrHtml(c)}
         <label class="client-field">Other devices known to have NO EDR (one per line)
+          <!-- Greyed out (disabled) once "all have EDR" is ticked, unless it
+               still has names in it (then it stays editable, with a warning). -->
           <textarea data-field="devices.manualNoEdr" rows="3" class="mono"
-                    placeholder="ACME-OLD-XP01&#10;ACME-KIOSK02">${e(d.manualNoEdr)}</textarea>
+                    ${d.allHaveEdr && d.manualNoEdr.trim() === "" ? "disabled" : ""}
+                    placeholder="${d.allHaveEdr ? "None: all identified devices have EDR" : "ACME-OLD-XP01&#10;ACME-KIOSK02"}">${e(d.manualNoEdr)}</textarea>
         </label>
       </section>
     `;
@@ -788,6 +896,8 @@ App.tabs.client = {
         App.updatePerson(caseId, t.dataset.person, t.dataset.key, t.value);
       } else if (t.dataset.critical) {
         App.updateCriticalAsset(caseId, t.dataset.critical, t.dataset.key, t.value);
+      } else if (t.dataset.rmm) {
+        App.updateRmm(caseId, t.dataset.rmm, t.dataset.key, t.value);   // "other" / notes text
       }
     });
 
@@ -800,7 +910,11 @@ App.tabs.client = {
       const t = event.target;
       const caseId = App.state.selectedCaseId;
       const field = t.dataset.field || "";
-      if (field && t.tagName === "SELECT") {
+      if (field === "devices.allHaveEdr") {
+        // Save, then redraw: the list box greys out / the warning updates.
+        App.setClientField(caseId, field, t.checked);
+        App.render();
+      } else if (field && t.tagName === "SELECT") {
         App.setClientField(caseId, field, t.value);
         App.render();
       } else if (field && t.type === "checkbox") {
@@ -819,6 +933,11 @@ App.tabs.client = {
           }
         }
         App.updatePerson(caseId, t.dataset.person, t.dataset.key, value);
+        App.render();
+      } else if (t.dataset.rmm && t.tagName === "SELECT") {
+        // An RMM's tool / managed by / compromised: save, then redraw
+        // (the "specify" box, the answer tag, warnings, the header tag).
+        App.updateRmm(caseId, t.dataset.rmm, t.dataset.key, t.value);
         App.render();
       } else if (t.dataset.critical && t.tagName === "SELECT") {
         // Critical asset's AD tier: save, then redraw (the dropdown's
@@ -873,6 +992,12 @@ App.tabs.client = {
       } else if (action === "copy-topology") {
         const ok = await App.copyText(App.cleanPath(caseObj.clientInfo.environment.topologyLink));
         App.flashButton(button, ok ? "Copied!" : "Copy failed");
+      } else if (action === "add-rmm") {
+        App.addRmm(caseObj.id);
+        App.render();
+      } else if (action === "remove-rmm") {
+        App.deleteRmm(caseObj.id, button.dataset.id);
+        App.render();
       } else if (action === "add-critical") {
         App.addCriticalAsset(caseObj.id);
         App.render();

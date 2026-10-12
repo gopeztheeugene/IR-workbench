@@ -93,7 +93,7 @@ App.taskForm = {
     }
     document.getElementById("task-kind").innerHTML = options(App.TASK_KINDS);
     document.getElementById("task-action-type").innerHTML =
-      '<option value="">(choose an action type)</option>' + options(App.CONTAINMENT_ACTIONS);
+      '<option value="">(choose an action)</option>' + App.containmentOptionsHtml("");
     document.getElementById("task-priority").innerHTML = options(App.TASK_PRIORITIES);
     document.getElementById("task-owner").innerHTML = options(App.TASK_OWNERS);
     document.getElementById("task-status").innerHTML = options(App.TASK_STATUSES);
@@ -101,9 +101,14 @@ App.taskForm = {
 
     // Pick list for the Action field (and the Action Items quick-add bar):
     // the containment catalog, minus "Other". A <datalist> only suggests;
-    // anything can still be typed.
-    document.getElementById("task-title-choices").innerHTML = App.CONTAINMENT_ACTIONS
-      .filter(function (a) { return a.key !== "other"; })
+    // anything can still be typed. A datalist can't show group headings,
+    // so it just follows the group order (Endpoint, Identities, ...).
+    // flatMap = map, then flatten the lists into one, like Python's
+    // [key for g in groups for key in g["keys"]].
+    document.getElementById("task-title-choices").innerHTML = App.CONTAINMENT_GROUPS
+      .flatMap(function (g) { return g.keys; })
+      .map(function (key) { return App.CONTAINMENT_ACTIONS.find(function (a) { return a.key === key; }); })
+      .filter(Boolean)
       .map(function (a) { return `<option value="${e(a.label)}"></option>`; })
       .join("");
 
