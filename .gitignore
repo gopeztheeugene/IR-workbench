@@ -1,5 +1,5 @@
-# Personal instructions for Claude Code, kept local
-CLAUDE.md
+# Claude Code's local settings. (CLAUDE.md IS committed: it's the
+# project briefing, so cloud sessions get the same instructions.)
 .claude/
 
 # REAL CASE DATA must never be pushed. Cases live outside this project,
