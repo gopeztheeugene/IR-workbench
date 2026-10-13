@@ -1,12 +1,15 @@
 // summary.js - the Summary and Reports tab.
-//   1. Incident summary (Incident Summary and Containment Strategy each
-//      have a reminders "?" next to their title)
+//   1. Incident summary
 //   2. Impact assessment (NIST SP 800-61: functional, information, recoverability)
 //   3. Containment strategy: assumptions, the containment actions, then
 //      the containment window + notes. The actions ARE
 //      containment items in case.tasks, the same list the Action Items
 //      tab shows; both use the shared pop-up in core/taskform.js.
-// Later: recovery strategy, pre-call briefs, and the client report.
+//   4. Eradication & Recovery Strategy: before-you-restore facts,
+//      suggestions (added only on click), recovery actions in order
+//      (recovery items in case.tasks, same idea as containment).
+// Sections 1, 3 and 4 have a reminders "?" next to their title.
+// Later: pre-call briefs and the client report.
 //
 // Rule: this file never calls other tabs. It only READS other case data
 // (assets, storyline, client info...) to show supporting facts, and
@@ -28,6 +31,7 @@ App.tabs.summary = {
       ${tab.summaryHtml(caseObj)}
       ${tab.impactHtml(caseObj)}
       ${tab.strategyHtml(caseObj)}
+      ${tab.recoveryHtml(caseObj)}
     `;
     App.time.fillZoneHints();     // "(UTC)" / "(Asia/Manila, UTC+08:00)"
     App.markEmptyFields(panel);   // red outlines if "Highlight empty fields" is on
@@ -48,6 +52,29 @@ App.tabs.summary = {
     { text: "Act on the logs you have, and treat missing logs or telemetry as blind spots, not clean results." },
     { text: "Foothold without enough endpoint / network telemetry: assume credential theft across the domain (privileged + service accounts, krbtgt twice, all users, Entra Connect as tier 0, revoke cloud sessions)." },
     { text: "Before acting: preserve evidence, get approval (who / when / how), coordinate the teams, and use an out-of-band channel if email may be compromised." }
+  ],
+
+  // Eradication & Recovery Strategy. Order matters here (unlike containment).
+  RECOVERY_REMINDERS: [
+    { strong: true, text: "Don't start recovery until containment is complete and credentials are reset, or you restore into a compromised environment." },
+    { text: "Eradicate before restoring: remove persistence, attacker accounts and tools everywhere, and close the entry point (patch / MFA)." },
+    { text: "Restore from a known-clean point: a backup from before the earliest attacker activity. Assume the attacker was in earlier than the logs show." },
+    { text: "Rebuild rather than clean hosts with hands-on-keyboard activity: cleaning can miss persistence." },
+    { text: "Every restored device needs EDR, confirmed healthy, before it rejoins the network." },
+    { text: "Recover in the agreed order, phased (unlike containment): Tier 0 (identity) first, then the business critical list (BC-01 first)." },
+    { text: "Watch closely after recovery: attackers often come back through something that was missed." },
+    { text: "The business owner confirms each system works before it's called recovered." }
+  ],
+
+  // Credential reset waves (whole domain).
+  WAVE_REMINDERS: [
+    { strong: true, text: "Not all at once: reset in waves, in order. Each wave finished and checked before the next." },
+    { text: "Tier 0 first, by a small trusted team, from clean admin workstations only." },
+    { text: "krbtgt twice, never back to back: wait for AD replication on every DC and, ideally, the 10-hour TGT lifetime before the second reset." },
+    { text: "Service accounts are the most dangerous phase: inventory first, agree a change window, test with the application owners." },
+    { text: "Don't forget local accounts: many ransomware actors capture local admin credentials." },
+    { text: "Communicate: the technical work is maybe 30%. Tell executives, IT operations, the helpdesk, application owners and users before you start." },
+    { text: "Expect lockouts, cached passwords, mobile device prompts and VPN failures: increase helpdesk staffing for the reset." }
   ],
 
   // A circled "?" that shows a list of reminders while the mouse is over it.
@@ -515,7 +542,7 @@ App.tabs.summary = {
     }
 
     const rows = items.map(function (t) {
-      const action = App.CONTAINMENT_ACTIONS.find(function (a) { return a.key === t.actionType; });
+      const action = App.taskAction(t);
       const targets = t.targets.map(function (x) { return `<span class="tag tag-type">${e(x)}</span>`; }).join(" ");
       const approval = tf.approvalHtml(t) ||
         (App.taskIsOpen(t) ? '<span class="muted small">needs approval</span>' : "");
@@ -563,6 +590,447 @@ App.tabs.summary = {
   },
 
   // ---------------------------------------------------------------
+  // 4. Eradication & Recovery Strategy
+  // ---------------------------------------------------------------
+  // The actions ARE recovery items in case.tasks (also in Action Items),
+  // listed here in recovery order (App.recoveryItems: BC order by default,
+  // ↑ / ↓ to change it). Suggestions are only added when you click Add.
+
+  recoveryHtml: function (c) {
+    const tab = App.tabs.summary;
+    return `
+      <section class="client-section">
+        <div class="section-header">
+          <h3 class="section-title">Eradication &amp; Recovery Strategy</h3>
+          ${tab.remindersTipHtml(tab.RECOVERY_REMINDERS)}
+        </div>
+        ${tab.recoveryBannerHtml(c)}
+        ${tab.beforeRestoreHtml(c)}
+        ${tab.wavesHtml(c)}
+        ${tab.recoverySuggestionsHtml(c)}
+        ${tab.recoveryActionsHtml(c)}
+      </section>
+    `;
+  },
+
+  // Containment still running? Recovery shouldn't start yet.
+  recoveryBannerHtml: function (c) {
+    const open = c.tasks.filter(function (t) { return t.kind === "containment" && App.taskIsOpen(t); }).length;
+    if (open === 0) {
+      return "";
+    }
+    return `<div class="alert alert-warning">⚠ ${open} containment action${open === 1 ? " is" : "s are"} still open:
+              finish containment (and reset credentials) before starting recovery.</div>`;
+  },
+
+  // Facts to have in front of you before restoring anything.
+  beforeRestoreHtml: function (c) {
+    const e = App.escapeHtml;
+    const facts = [];
+
+    // Clean restore point: before the earliest attacker activity.
+    const first = App.sortedStoryline(c).find(function (st) { return st.timestamp !== ""; });
+    facts.push(first
+      ? `Clean restore point: from <strong>before ${e(App.taskForm.when(first.timestamp))}</strong> (${e(first.id)}, the earliest attacker activity in the Storyline). Assume the attacker was in earlier.`
+      : "Clean restore point: unknown, no Storyline entries with a time yet.");
+
+    // Backups, from the Client tab.
+    const b = c.clientInfo.backups;
+    const backupParts = [];
+    if (b.product) { backupParts.push(e(b.product)); }
+    if (b.immutable === "yes") { backupParts.push("immutable"); }
+    if (b.immutable === "no") { backupParts.push('<span class="copy-bad">NOT immutable</span>'); }
+    const where = [b.storage.cloud ? "cloud" : "", b.storage.onPrem ? "on-prem" : ""].filter(Boolean).join(" + ");
+    if (where) { backupParts.push("stored " + where); }
+    if (b.allServers === "no") {
+      backupParts.push('<span class="copy-bad">not all servers backed up</span>' + (b.allServersNotes ? ": " + e(b.allServersNotes) : ""));
+    }
+    facts.push("Backups: " + (backupParts.length ? backupParts.join(" · ") : "not filled in yet (Client tab)."));
+
+    // Tier order: identity first.
+    const tierWarning = App.tierOrderWarning(c);
+    if (tierWarning) {
+      facts.push(`<span class="copy-bad">⚠ ${e(tierWarning)}</span> (Client tab, Critical assets)`);
+    }
+
+    return `
+      <div class="impact-category">
+        <h4>Before you restore</h4>
+        <ul class="facts">${facts.map(function (f) { return "<li>" + f + "</li>"; }).join("")}</ul>
+      </div>`;
+  },
+
+  // Credential reset waves: progress line, Copy / Save buttons and the
+  // "?" always visible; the six wave cards fold away (closed when the
+  // app opens, App.state.wavesOpen, like Assumptions).
+  wavesHtml: function (c) {
+    const tab = App.tabs.summary;
+    const e = App.escapeHtml;
+    const done = App.CREDENTIAL_WAVES.filter(function (w) { return App.waveState(c, w.key).status === "done"; }).length;
+    const total = App.CREDENTIAL_WAVES.length;
+
+    const cards = App.CREDENTIAL_WAVES.map(function (w, i) {
+      const s = App.waveState(c, w.key);
+      const options = App.WAVE_STATUSES.map(function (o) {
+        return `<option value="${e(o.key)}"${o.key === s.status ? " selected" : ""}>${e(o.label)}</option>`;
+      }).join("");
+      const list = function (items) { return items.map(function (x) { return "<li>" + e(x) + "</li>"; }).join(""); };
+      return `
+        <div class="wave-card wave-${e(s.status || "todo")}">
+          <div class="wave-head">
+            <strong>Wave ${i + 1}: ${e(w.title)}</strong>
+            ${w.tag ? `<span class="tag tag-warning-soft">${e(w.tag)}</span>` : ""}
+            <span class="spacer"></span>
+            <select class="cell-input" data-wave="${e(w.key)}">${options}</select>
+            ${s.doneAt ? `<span class="muted small">done ${e(App.taskForm.when(s.doneAt))}</span>` : ""}
+          </div>
+          <div class="wave-body">
+            <div><span class="muted small">In scope</span><ul>${list(w.what)}</ul></div>
+            <div><span class="muted small">How</span><ul>${list(w.how)}</ul></div>
+          </div>
+          <input class="grow wave-notes" data-wave-notes="${e(w.key)}" value="${e(s.notes)}"
+                 placeholder="Notes: who did it, when, issues (included in the shared plan)">
+        </div>`;
+    }).join("");
+
+    const comms = App.WAVE_COMMS;
+    return `
+      <div class="impact-category">
+        <div class="section-header">
+          <h4>Credential reset waves <span class="category-hint">(whole domain: never all at once)</span>
+            <span class="muted small">${done} of ${total} done</span></h4>
+          <div class="header-buttons">
+            <button class="btn btn-small" data-action="copy-waves" title="A plain-text plan for the system administrators (email / Teams)">Copy plan for sysadmins</button>
+            <button class="btn btn-small" data-action="save-waves" title="The same plan as a .txt file in the case's exports/ folder">Save as text file</button>
+            ${tab.remindersTipHtml(tab.WAVE_REMINDERS)}
+          </div>
+        </div>
+        <details id="waves-box" class="fold"${App.state.wavesOpen ? " open" : ""}>
+          <summary><span class="small">Show the waves</span></summary>
+          <div class="fold-body">
+            ${cards}
+            <div class="wave-card">
+              <strong>Communicate</strong> <span class="muted small">${e(comms.note)}</span>
+              <div class="wave-body">
+                <div><span class="muted small">Notify</span><ul>${comms.notify.map(function (x) { return "<li>" + e(x) + "</li>"; }).join("")}</ul></div>
+                <div><span class="muted small">Expected issues</span><ul>${comms.issues.map(function (x) { return "<li>" + e(x) + "</li>"; }).join("")}</ul>
+                  <span class="small">${e(comms.helpdesk)}</span></div>
+              </div>
+            </div>
+          </div>
+        </details>
+      </div>`;
+  },
+
+  // The waves as plain text, to share with system administrators.
+  // Checkboxes ("[ ]" / "[x]") so they can tick them off in an email.
+  wavesText: function (c) {
+    const lines = [];
+    const client = c.client ? " · " + c.client : "";
+    lines.push("CREDENTIAL RESET PLAN (in waves) – " + c.id + client);
+    lines.push("Prepared " + App.taskForm.when(App.time.nowUtc()) + ". Do the waves in order, one at a time. Never reset everything at once.");
+    // This environment's Tier 0 systems (from the critical assets list).
+    const tier0 = c.clientInfo.criticalAssets.filter(function (a) { return a.tier === "t0" && a.name; });
+    if (tier0.length) {
+      lines.push("Tier 0 systems in this environment: " + tier0.map(function (a) { return a.name; }).join(", "));
+    }
+    App.CREDENTIAL_WAVES.forEach(function (w, i) {
+      const s = App.waveState(c, w.key);
+      const status = App.labelFor(App.WAVE_STATUSES, s.status) + (s.doneAt ? " " + App.taskForm.when(s.doneAt) : "");
+      lines.push("");
+      lines.push((s.status === "done" ? "[x] " : "[ ] ") + "WAVE " + (i + 1) + ": " + w.title.toUpperCase() +
+                 (w.tag ? " (" + w.tag + ")" : "") + " – " + status);
+      lines.push("  In scope:");
+      w.what.forEach(function (x) { lines.push("    - " + x); });
+      lines.push("  How:");
+      w.how.forEach(function (x) { lines.push("    - " + x); });
+      if (s.notes) {
+        lines.push("  Notes: " + s.notes);
+      }
+    });
+    const comms = App.WAVE_COMMS;
+    lines.push("");
+    lines.push("COMMUNICATION: " + comms.note);
+    lines.push("  Notify: " + comms.notify.join(", "));
+    lines.push("  Expected issues: " + comms.issues.join(", "));
+    lines.push("  " + comms.helpdesk);
+    return lines.join("\n");
+  },
+
+  // Recovery items suggested from the case. Each: { key, title, actionType,
+  // targets }. Nothing is added until you click Add. Skips ones already
+  // added (their item carries auto: "rec:<key>") or dismissed.
+  recoverySuggestions: function (c) {
+    const out = [];
+    const affected = c.assets.filter(function (a) { return a.status !== "clean"; });
+    const tactics = c.storyline.map(function (st) { return st.tactic; });
+
+    // Affected computers (not accounts / mailboxes): only these need an
+    // eradication sweep and an EDR check.
+    const hostsAffected = affected.some(function (a) {
+      return !["account", "service-account", "mailbox"].includes(a.type);
+    });
+
+    // General: hunt for the attacker everywhere, with every IOC.
+    if (hostsAffected || c.iocs.length) {
+      out.push({ key: "threat-hunt", actionType: "threat-hunt", targets: [],
+        title: "Threat hunt for all available IOCs of the threat actor (" + c.iocs.length + " in the IOCs tab)" });
+    }
+    // Device: clean persistence the Storyline found.
+    const persistence = c.storyline.filter(function (st) { return st.tactic === "TA0003"; });
+    if (persistence.length) {
+      out.push({ key: "storyline-persistence", actionType: "remove-persistence",
+        targets: persistence.map(function (st) { return st.host; }).filter(Boolean)
+          .filter(function (h, i, list) { return list.indexOf(h) === i; }),     // no repeats
+        title: "Clean persistence found in the Storyline (" + persistence.map(function (st) { return st.id; }).join(", ") + ")" });
+    }
+    // Control: patch how they got in.
+    const entry = c.storyline.filter(function (st) { return st.tactic === "TA0001"; });
+    if (entry.length) {
+      out.push({ key: "close-entry", actionType: "close-entry", targets: [],
+        title: "Patch initial access (" + entry.map(function (st) { return st.id; }).join(", ") + ")" });
+    }
+    // Credentials: Patient 0 = the host / user of the earliest Storyline entry.
+    const firstEntry = App.sortedStoryline(c).find(function (st) { return st.timestamp !== "" && st.host; });
+    if (firstEntry) {
+      out.push({ key: "patient-zero", actionType: "patient-zero", targets: [firstEntry.host],
+        title: "Patient 0: reset credentials for " + firstEntry.host + " (" + firstEntry.id + ", the earliest Storyline entry)" });
+    }
+    // Credentials: domain-wide, if a domain compromise was assumed.
+    const assumed = c.summary.containment.assumptions.map(function (a) { return a.source; });
+    if (assumed.includes("domain-credentials") || assumed.includes("tier0-domain")) {
+      out.push({ key: "reset-credentials", actionType: "reset-creds-recovery", targets: [],
+        title: "Whole domain credential reset by tier (in waves): Tier 0, then Tier 1, then Tier 2" });
+      out.push({ key: "rotate-secrets", actionType: "rotate-secrets", targets: [],
+        title: "Rotate secrets (API keys, certificates, SSH keys, tokens) reachable from compromised hosts" });
+    }
+
+    // Restore / rebuild each affected asset: business critical ones first,
+    // in BC order, then the rest.
+    const ordered = affected.slice().sort(function (a, b) {
+      const pa = App.criticalMatch(c, a.name) ? App.criticalMatch(c, a.name).position : Infinity;
+      const pb = App.criticalMatch(c, b.name) ? App.criticalMatch(c, b.name).position : Infinity;
+      return pa === pb ? 0 : (pa < pb ? -1 : 1);
+    });
+    for (const a of ordered) {
+      const match = App.criticalMatch(c, a.name);
+      const bc = match ? " (" + match.label + ")" : "";
+      if (a.type === "account" || a.type === "service-account" || a.type === "mailbox") {
+        // Accounts keep their full name in the key (normalizeHost would cut
+        // "j.doe@acme.example" down to "j").
+        out.push({ key: "account:" + a.name.trim().toLowerCase(), actionType: "reenable-accounts", targets: [a.name],
+          title: "Reset and re-enable " + a.name + " (after MFA re-registration)" });
+      } else if (a.type === "server") {
+        out.push({ key: "restore:" + App.normalizeHost(a.name), actionType: "restore-backup", targets: [a.name],
+          title: "Restore " + a.name + " from backup" + bc });
+        out.push({ key: "verify-backup:" + App.normalizeHost(a.name), actionType: "verify-backup", targets: [a.name],
+          title: "Verify " + a.name + "'s backup is clean before restoring" });
+      } else {
+        out.push({ key: "rebuild:" + App.normalizeHost(a.name), actionType: "rebuild", targets: [a.name],
+          title: "Rebuild / reimage " + a.name + bc });
+      }
+    }
+
+    // VPN switched off during containment? Bring it back safely.
+    const vpnOff = c.tasks.some(function (t) { return t.actionType === "disable-vpn" && t.status === "done"; });
+    if (vpnOff) {
+      out.push({ key: "reenable-vpn", actionType: "reenable-vpn", targets: [],
+        title: "Re-enable VPN (patched, with MFA)" });
+    }
+
+    // Cloud: a cloud case or an affected cloud resource. Azure and / or AWS
+    // depending on what the Client tab's Environment > Cloud says (both
+    // if it doesn't say).
+    const cloudCase = c.types.includes("cloud") || affected.some(function (a) { return a.type === "cloud"; });
+    if (cloudCase) {
+      const env = (c.clientInfo.environment.cloud || "").toLowerCase();
+      const azure = /azure|entra/.test(env);
+      const aws = /\baws\b|amazon/.test(env);
+      if (azure || !aws) {
+        out.push({ key: "az-rbac", actionType: "az-rbac", targets: [], title: "Azure: review role assignments and remove attacker ones" });
+        out.push({ key: "az-rotate", actionType: "az-rotate", targets: [], title: "Azure: rotate keys and secrets (storage keys, SAS, Key Vault, service principals)" });
+        out.push({ key: "az-resources", actionType: "az-resources", targets: [], title: "Azure: remove attacker-created resources" });
+        out.push({ key: "az-logging", actionType: "az-logging", targets: [], title: "Azure: Defender for Cloud and log retention on" });
+      }
+      if (aws || !azure) {
+        out.push({ key: "aws-iam", actionType: "aws-iam", targets: [], title: "AWS: review IAM users, roles, access keys and policies" });
+        out.push({ key: "aws-rotate", actionType: "aws-rotate", targets: [], title: "AWS: rotate access keys and secrets" });
+        out.push({ key: "aws-resources", actionType: "aws-resources", targets: [], title: "AWS: remove attacker-created resources in every region" });
+        out.push({ key: "aws-logging", actionType: "aws-logging", targets: [], title: "AWS: CloudTrail (all regions), GuardDuty and Config on" });
+      }
+    }
+
+    // BEC / account takeover, or affected accounts / mailboxes: the email
+    // and identity clean-up.
+    const isBec = c.types.includes("bec");
+    const accountCase = isBec || c.types.includes("account-takeover");
+    const accounts = affected
+      .filter(function (a) { return a.type === "account" || a.type === "mailbox"; })
+      .map(function (a) { return a.name; });
+    if (accountCase || accounts.length) {
+      out.push({ key: "bec-reset-mfa", actionType: "bec-reset-mfa", targets: accounts,
+        title: "Reset MFA methods and re-register" + (accounts.length ? " for " + accounts.join(", ") : "") });
+      out.push({ key: "bec-rule-sweep", actionType: "bec-rule-sweep", targets: [],
+        title: "Tenant-wide sweep for malicious inbox / forwarding / transport rules" });
+      out.push({ key: "bec-review-sent", actionType: "bec-review-sent", targets: accounts,
+        title: "Review mail sent by the attacker (message trace / sent items)" });
+      out.push({ key: "bec-oauth-review", actionType: "bec-oauth-review", targets: [],
+        title: "Review OAuth app consents tenant-wide" });
+      out.push({ key: "bec-conditional-access", actionType: "bec-conditional-access", targets: [],
+        title: "Harden sign-in: block legacy auth, Conditional Access" });
+    }
+    if (isBec) {
+      out.push({ key: "bec-notify-contacts", actionType: "bec-notify-contacts", targets: [],
+        title: "Notify affected contacts / vendors (fraud warning)" });
+      out.push({ key: "bec-payment-recall", actionType: "bec-payment-recall", targets: [],
+        title: "Contact the bank to recall / freeze fraudulent payments (if any were made)" });
+      out.push({ key: "bec-audit-logging", actionType: "bec-audit-logging", targets: [],
+        title: "Make sure mailbox auditing and audit log retention are on" });
+    }
+
+    // Validation and monitoring, once there's something to recover.
+    if (hostsAffected) {
+      out.push({ key: "confirm-edr", actionType: "confirm-edr", targets: [],
+        title: "Confirm EDR on every restored device before it rejoins the network" });
+    }
+    if (affected.length) {
+      out.push({ key: "monitoring", actionType: "monitoring", targets: [],
+        title: "Enhanced monitoring period after recovery" });
+    }
+
+    const r = c.summary.recovery;
+    return out.filter(function (s) {
+      return !r.dismissedSuggestions.includes(s.key) &&
+             !c.tasks.some(function (t) { return t.auto === "rec:" + s.key; });
+    });
+  },
+
+  recoverySuggestionsHtml: function (c) {
+    const e = App.escapeHtml;
+    const list = App.tabs.summary.recoverySuggestions(c);
+    if (list.length === 0) {
+      return "";
+    }
+    const rows = list.map(function (s) {
+      const action = App.RECOVERY_ACTIONS.find(function (a) { return a.key === s.actionType; });
+      // The grey line: the catalog action (only if the title doesn't
+      // already say it) and the targets.
+      const details = [];
+      if (action && !s.title.toLowerCase().startsWith(action.label.toLowerCase().slice(0, 20))) {
+        details.push(action.label);
+      }
+      if (s.targets.length) {
+        details.push(s.targets.join(", "));
+      }
+      return `
+        <div class="suggestion">
+          <div>💡 <strong>${e(s.title)}</strong>
+            ${details.length ? `<div class="muted small">${e(details.join(" · "))}</div>` : ""}</div>
+          <div class="suggestion-buttons">
+            <button class="btn btn-small btn-primary" data-action="add-rec-suggestion" data-key="${e(s.key)}">Add</button>
+            <button class="btn btn-small" data-action="dismiss-rec-suggestion" data-key="${e(s.key)}">Dismiss</button>
+          </div>
+        </div>`;
+    }).join("");
+    // A fold-away box like Assumptions: closed when the app opens, and it
+    // stays the way you left it while you work (App.state, not saved).
+    return `
+      <div class="impact-category">
+        <details id="recovery-suggestions-box" class="fold"${App.state.recoverySuggestionsOpen ? " open" : ""}>
+          <summary>
+            <h4>Suggestions <span class="category-hint">(nothing is added until you click Add)</span>
+              <span class="muted small">${list.length} suggestion${list.length === 1 ? "" : "s"}</span></h4>
+          </summary>
+          <div class="fold-body">
+            <div class="suggestions">${rows}</div>
+          </div>
+        </details>
+      </div>`;
+  },
+
+  // Add one suggestion as a recovery item (marked so it isn't suggested again).
+  addRecoverySuggestion: function (c, key) {
+    const s = App.tabs.summary.recoverySuggestions(c).find(function (x) { return x.key === key; });
+    if (!s) {
+      return;
+    }
+    App.addTask(c.id, { kind: "recovery", actionType: s.actionType, title: s.title, targets: s.targets,
+                        priority: "p2", owner: "me", status: "planned", auto: "rec:" + s.key });
+  },
+
+  recoveryActionsHtml: function (c) {
+    const e = App.escapeHtml;
+    const tf = App.taskForm;
+    const items = App.recoveryItems(c);
+    const custom = c.summary.recovery.order.length > 0;
+
+    // Progress line, e.g. "6 actions: 2 done, 4 planned".
+    let progress = "";
+    if (items.length) {
+      const counts = App.TASK_STATUSES
+        .map(function (s) {
+          const n = items.filter(function (t) { return t.status === s.key; }).length;
+          return n ? n + " " + s.label.toLowerCase() : "";
+        })
+        .filter(Boolean);
+      progress = `<p class="small">${items.length} action${items.length === 1 ? "" : "s"}: ${e(counts.join(", "))}
+        · <span class="muted">${custom ? "custom order" : "in business critical order (BC-01 first)"}</span>
+        ${custom ? '<button class="btn btn-small" data-action="reset-recovery-order">Reset to BC order</button>' : ""}</p>`;
+    }
+
+    const rows = items.map(function (t, i) {
+      const action = App.taskAction(t);
+      // Targets with their asset tags ([Tier 0] [BC-01]) when they're assets.
+      const targets = t.targets.map(function (x) {
+        const asset = App.findAssetByName(c.id, x);
+        const match = App.criticalMatch(c, x);
+        const tags = asset ? App.assetTagsHtml(c, asset)
+          : (match ? `<span class="tag tag-critical">${e(match.label)}</span>` : "");
+        return `<span class="tag tag-type">${e(x)}</span>${tags ? " " + tags : ""}`;
+      }).join(" ");
+      return `
+        <tr class="${App.taskIsOpen(t) ? "" : "task-closed"}">
+          <td class="restore-order">${i + 1}</td>
+          <td class="nowrap"><strong>${e(t.id)}</strong></td>
+          <td class="task-title">
+            ${e(t.title)}
+            ${action && action.key !== "other" && action.label !== t.title ? `<div class="muted small">${e(action.label)}</div>` : ""}
+            ${targets ? `<div class="task-tags">${targets}</div>` : ""}
+            ${action && action.hint && App.taskIsOpen(t) ? `<div class="hint-inline">💡 <strong>Before you do this:</strong> ${e(action.hint)}</div>` : ""}
+            ${t.statusReason && (t.status === "blocked" || t.status === "not-needed")
+              ? `<div class="task-reason">${t.status === "blocked" ? "Waiting on: " : "Not needed: "}${e(t.statusReason)}</div>` : ""}
+          </td>
+          <td class="nowrap">${e(App.labelFor(App.TASK_OWNERS, t.owner) + (t.ownerName ? ": " + t.ownerName : ""))}</td>
+          <td class="nowrap">${tf.dueHtml(c, t)}</td>
+          <td>${tf.statusSelectHtml(t)}</td>
+          <td class="nowrap">
+            <button class="btn btn-small" data-action="move-recovery" data-id="${e(t.id)}" data-step="-1" title="Earlier"${i === 0 ? " disabled" : ""}>↑</button>
+            <button class="btn btn-small" data-action="move-recovery" data-id="${e(t.id)}" data-step="1" title="Later"${i === items.length - 1 ? " disabled" : ""}>↓</button>
+            <button class="btn btn-small" data-action="edit-task" data-id="${e(t.id)}">Edit</button>
+          </td>
+        </tr>`;
+    }).join("");
+
+    return `
+      <div class="impact-category">
+        <h4>Eradication &amp; recovery actions <span class="category-hint">(listed and synched with Action Items)</span></h4>
+        <div class="add-action-row">
+          <select id="recovery-type">${App.actionOptionsHtml("recovery", "")}</select>
+          <button class="btn btn-small btn-primary" data-action="add-recovery">+ Add action</button>
+        </div>
+        ${progress}
+        ${items.length ? `
+          <div class="table-wrap">
+            <table class="data-table task-table">
+              <thead><tr><th>#</th><th>ID</th><th>Action</th><th>Owner</th><th>Due</th><th>Status</th><th></th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>` : '<p class="muted small">No recovery actions yet. Add a suggestion above, or pick one.</p>'}
+      </div>
+    `;
+  },
+
+  // ---------------------------------------------------------------
   // Setup: delegated listeners (like the Client tab)
   // ---------------------------------------------------------------
 
@@ -577,6 +1045,10 @@ App.tabs.summary = {
     panel.addEventListener("toggle", function (event) {
       if (event.target.id === "assumptions-box") {
         App.state.assumptionsOpen = event.target.open;
+      } else if (event.target.id === "recovery-suggestions-box") {
+        App.state.recoverySuggestionsOpen = event.target.open;
+      } else if (event.target.id === "waves-box") {
+        App.state.wavesOpen = event.target.open;
       }
     }, true);
 
@@ -586,6 +1058,10 @@ App.tabs.summary = {
       const caseId = App.state.selectedCaseId;
       if (t.dataset.assumption) {
         App.updateAssumption(caseId, t.dataset.assumption, t.dataset.key, t.value);
+        return;
+      }
+      if (t.dataset.waveNotes) {                 // data-wave-notes="w1"
+        App.setWaveField(caseId, t.dataset.waveNotes, "notes", t.value);
         return;
       }
       if (!t.dataset.field || t.type === "radio" || t.type === "checkbox") {
@@ -604,6 +1080,11 @@ App.tabs.summary = {
       const caseId = App.state.selectedCaseId;
       if (t.dataset.status) {
         App.taskForm.changeStatus(App.getSelectedCase(), t.dataset.status, t.value);
+        return;
+      }
+      if (t.dataset.wave) {                      // a wave's status dropdown
+        App.setWaveField(caseId, t.dataset.wave, "status", t.value);
+        App.render();
         return;
       }
       if (!t.dataset.field) {
@@ -661,6 +1142,33 @@ App.tabs.summary = {
       } else if (action === "add-containment") {
         const type = document.getElementById("containment-type").value;
         App.taskForm.open(null, { preset: { kind: "containment", actionType: type, priority: "p1" } });
+      } else if (action === "copy-waves") {
+        // copyText is async (it returns a Promise, like a Python coroutine):
+        // .then() runs when it's finished.
+        App.copyText(App.tabs.summary.wavesText(App.getSelectedCase())).then(function (ok) {
+          App.flashButton(button, ok ? "Copied!" : "Copy failed");
+        });
+      } else if (action === "save-waves") {
+        const c = App.getSelectedCase();
+        const name = App.safeFileName(c.id) + "_credential_reset_waves.txt";
+        App.storage.saveExport(c, name, App.tabs.summary.wavesText(c)).then(function (result) {
+          App.flashButton(button, result.saved ? "Saved to exports/" : "Downloaded");
+        });
+      } else if (action === "add-recovery") {
+        const type = document.getElementById("recovery-type").value;
+        App.taskForm.open(null, { preset: { kind: "recovery", actionType: type, priority: "p2" } });
+      } else if (action === "add-rec-suggestion") {
+        App.tabs.summary.addRecoverySuggestion(App.getSelectedCase(), button.dataset.key);
+        App.render();
+      } else if (action === "dismiss-rec-suggestion") {
+        App.dismissRecoverySuggestion(caseId, button.dataset.key);
+        App.render();
+      } else if (action === "move-recovery") {
+        App.moveRecoveryItem(caseId, button.dataset.id, Number(button.dataset.step));
+        App.render();
+      } else if (action === "reset-recovery-order") {
+        App.resetRecoveryOrder(caseId);
+        App.render();
       } else if (action === "edit-task") {
         App.taskForm.open(button.dataset.id);
       }

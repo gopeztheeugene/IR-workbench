@@ -38,6 +38,11 @@ No server, no install, no build step, no internet connection needed.
   - Assumptions, with suggestions from the case (e.g. assume credential theft across the domain when there's a foothold and EDR gaps).
   - Containment actions picked from a catalog (disable accounts, isolate host, revoke sessions, block lateral movement, firewall deny, and more), grouped by Endpoint, Identities, Network, Virtual / Cloud, and Email and SaaS, each with a "Before you do this" hint.
   - A containment window: everything is contained at once, and actions without their own due time use it.
+- **Eradication & recovery strategy:**
+  - A warning while containment is still running, the clean restore point (before the earliest attacker activity), a backups summary, and a warning if Tier 0 (identity) isn't first in the recovery order.
+  - **Credential reset waves** for a whole-domain reset (Tier 0 accounts → first krbtgt → service accounts → second krbtgt → local accounts → all users, plus communication), with a status per wave and a **Copy plan for sysadmins** / **Save as text file** button to share it.
+  - Suggestions from the case (threat hunt, patch initial access, Patient 0, credential reset by tier, rebuild or restore each affected asset, confirm EDR, monitoring, plus cloud and BEC ones). Nothing is added until you click **Add**.
+  - Recovery actions from a catalog grouped as Device, Credentials, General, Control, Enhancement, Network & access, Cloud (Azure / AWS), and Email & Identity for BEC (MFA reset, mail rule sweep, notify contacts, payment recall, and more) with "Before you do this" hints, in business critical order by default and reorderable. They're shared with Action Items.
 - Hover reminders (the circled **?**) next to the section titles.
 
 **Action Items**
@@ -134,7 +139,7 @@ Invoke-TriageCheck.ps1 logging & evidence check script (built into the Client ta
 - [x] Action Items tab
 - [x] Summary and Reports: incident summary, impact assessment, containment strategy
 - [x] Edit case details (status, priority, title, types), with time-stamped status changes
-- [ ] Recovery strategy (driven by the critical assets restore order)
+- [x] Eradication & recovery strategy (suggested from the case, in business critical order)
 - [ ] Pre-call briefs and client report
 - [ ] Post-incident tab (lessons learned across cases)
 - [ ] Polish

@@ -92,23 +92,26 @@ App.taskForm = {
       return list.map(function (o) { return `<option value="${e(o.key)}">${e(o.label)}</option>`; }).join("");
     }
     document.getElementById("task-kind").innerHTML = options(App.TASK_KINDS);
-    document.getElementById("task-action-type").innerHTML =
-      '<option value="">(choose an action)</option>' + App.containmentOptionsHtml("");
+    tf.fillActionOptions("containment");
     document.getElementById("task-priority").innerHTML = options(App.TASK_PRIORITIES);
     document.getElementById("task-owner").innerHTML = options(App.TASK_OWNERS);
     document.getElementById("task-status").innerHTML = options(App.TASK_STATUSES);
     document.getElementById("task-approval-method").innerHTML = options(App.APPROVAL_METHODS);
 
     // Pick list for the Action field (and the Action Items quick-add bar):
-    // the containment catalog, minus "Other". A <datalist> only suggests;
-    // anything can still be typed. A datalist can't show group headings,
-    // so it just follows the group order (Endpoint, Identities, ...).
+    // the containment catalog, then the recovery one, minus "Other". A
+    // <datalist> only suggests; anything can still be typed. It can't show
+    // group headings, so it just follows the group order.
     // flatMap = map, then flatten the lists into one, like Python's
     // [key for g in groups for key in g["keys"]].
-    document.getElementById("task-title-choices").innerHTML = App.CONTAINMENT_GROUPS
-      .flatMap(function (g) { return g.keys; })
-      .map(function (key) { return App.CONTAINMENT_ACTIONS.find(function (a) { return a.key === key; }); })
-      .filter(Boolean)
+    document.getElementById("task-title-choices").innerHTML = ["containment", "recovery"]
+      .flatMap(function (kind) {
+        const catalog = App.catalogFor(kind);
+        return catalog.groups
+          .flatMap(function (g) { return g.keys; })
+          .map(function (key) { return catalog.actions.find(function (a) { return a.key === key; }); })
+          .filter(Boolean);
+      })
       .map(function (a) { return `<option value="${e(a.label)}"></option>`; })
       .join("");
 
@@ -116,35 +119,40 @@ App.taskForm = {
     document.getElementById("task-kind").addEventListener("change", tf.updateFormFields);
     document.getElementById("task-status").addEventListener("change", tf.updateFormFields);
 
-    // Picking an action type fills in the action's name (if it's empty or
-    // still the previous type's name) and shows its hint.
+    // Picking an action fills in the action's name (if it's empty or
+    // still the previous action's name) and shows its hint.
     let lastTypeLabel = "";
     const typeSelect = document.getElementById("task-action-type");
+    // The label of the picked action in the current kind's catalog.
+    function actionLabel() {
+      const catalog = App.catalogFor(form.elements["kind"].value);
+      return catalog ? App.labelFor(catalog.actions, typeSelect.value) : "";
+    }
     typeSelect.addEventListener("focus", function () {
-      lastTypeLabel = App.labelFor(App.CONTAINMENT_ACTIONS, typeSelect.value);
+      lastTypeLabel = actionLabel();
     });
     typeSelect.addEventListener("change", function () {
       const title = form.elements["title"];
       if (title.value.trim() === "" || title.value === lastTypeLabel) {
-        title.value = typeSelect.value && typeSelect.value !== "other"
-          ? App.labelFor(App.CONTAINMENT_ACTIONS, typeSelect.value) : "";
+        title.value = typeSelect.value && typeSelect.value !== "other" ? actionLabel() : "";
       }
-      lastTypeLabel = App.labelFor(App.CONTAINMENT_ACTIONS, typeSelect.value);
+      lastTypeLabel = actionLabel();
       tf.updateFormFields();
     });
 
     // The other way round: picking a common action in the Action field
-    // makes the item that containment action (action type Containment,
-    // containment action set, hint shown). Typing something else changes
-    // nothing, so free text works as before.
+    // makes the item that action (action type Containment or Recovery,
+    // the action set, hint shown). Typing something else changes nothing,
+    // so free text works as before.
     form.elements["title"].addEventListener("input", function () {
-      const action = App.containmentActionForTitle(form.elements["title"].value);
-      if (action === null) {
+      const found = App.actionForTitle(form.elements["title"].value);
+      if (found === null) {
         return;
       }
-      form.elements["kind"].value = "containment";
-      typeSelect.value = action.key;
-      lastTypeLabel = action.label;
+      form.elements["kind"].value = found.kind;
+      tf.fillActionOptions(found.kind);
+      typeSelect.value = found.action.key;
+      lastTypeLabel = found.action.label;
       tf.updateFormFields();
     });
 
@@ -241,23 +249,43 @@ App.taskForm = {
       .join("");
   },
 
-  // Show / hide fields for the current kind, action type, and status.
+  // Fill the action dropdown with one kind's catalog ("containment" or
+  // "recovery"), grouped. Keeps the picked action if it's in that catalog.
+  actionKind: null,
+  fillActionOptions: function (kind) {
+    const catalog = App.catalogFor(kind);
+    if (!catalog || App.taskForm.actionKind === kind) {
+      return;                               // General item, or already filled
+    }
+    const select = document.getElementById("task-action-type");
+    const current = select.value;
+    select.innerHTML = '<option value="">(choose an action)</option>' + App.actionOptionsHtml(kind, current);
+    App.taskForm.actionKind = kind;
+    document.getElementById("task-action-type-label").textContent =
+      kind === "recovery" ? "Recovery action" : "Containment action";
+  },
+
+  // Show / hide fields for the current kind, action, and status.
   updateFormFields: function () {
     const form = document.getElementById("task-form");
     const status = form.elements["status"].value;
     const kind = form.elements["kind"].value;
     const isContainment = kind === "containment";
-    const action = App.CONTAINMENT_ACTIONS.find(function (a) { return a.key === form.elements["actionType"].value; });
+    const catalog = App.catalogFor(kind);
+    App.taskForm.fillActionOptions(kind);   // the right catalog in the dropdown
+    const action = catalog
+      ? catalog.actions.find(function (a) { return a.key === form.elements["actionType"].value; })
+      : null;
 
-    // Action type + hint: containment only.
-    document.getElementById("task-action-type-row").hidden = !isContainment;
+    // Action + hint: containment and recovery items only.
+    document.getElementById("task-action-type-row").hidden = !catalog;
     const hint = document.getElementById("task-hint");
-    hint.hidden = !(isContainment && action && action.hint);
+    hint.hidden = !(catalog && action && action.hint);
     hint.innerHTML = action && action.hint ? "<strong>Before you do this:</strong> " + App.escapeHtml(action.hint) : "";
 
     // Targets pick from IOCs for IOC actions, otherwise from Assets.
     const targetInput = document.getElementById("task-target-input");
-    if (isContainment && action && action.targets === "iocs") {
+    if (catalog && action && action.targets === "iocs") {      // e.g. firewall deny, threat hunt
       targetInput.removeAttribute("data-asset-picker");
       targetInput.setAttribute("data-ioc-picker", "");
       targetInput.placeholder = "Pick from IOCs or type, then Enter";
@@ -309,6 +337,7 @@ App.taskForm = {
     if (t) {
       form.elements["title"].value = t.title;
       form.elements["kind"].value = t.kind;
+      tf.fillActionOptions(t.kind);          // the right catalog before picking from it
       form.elements["actionType"].value = t.actionType || "";
       form.elements["priority"].value = t.priority;
       form.elements["due"].value = App.time.toDisplay(t.due);
@@ -325,13 +354,17 @@ App.taskForm = {
     } else {
       const p = opts.preset || {};
       form.elements["kind"].value = p.kind || "task";
+      tf.fillActionOptions(p.kind);
       form.elements["actionType"].value = p.actionType || "";
       form.elements["priority"].value = p.priority || "p3";
-      if (p.actionType && p.actionType !== "other") {
-        form.elements["title"].value = App.labelFor(App.CONTAINMENT_ACTIONS, p.actionType);
+      const catalog = App.catalogFor(p.kind);
+      if (catalog && p.actionType && p.actionType !== "other") {
+        form.elements["title"].value = App.labelFor(catalog.actions, p.actionType);
       }
       if (p.kind === "containment") {
         document.getElementById("task-dialog-title").textContent = "Add containment action";
+      } else if (p.kind === "recovery") {
+        document.getElementById("task-dialog-title").textContent = "Add eradication / recovery action";
       }
     }
     tf.renderTargets();

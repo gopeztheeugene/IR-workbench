@@ -298,6 +298,13 @@ App.SAMPLE_TASKS = {
       approval: { by: "Dana Reyes", h: -3, method: "teams" } },
     { kind: "containment", actionType: "protect-backups", title: "Take the Synology NAS offline (protect backups)",
       targets: ["ACME-NAS01"], priority: "p1", owner: "client", ownerName: "Dana Reyes", status: "planned" },
+    // Recovery: added from the Eradication & Recovery Strategy's suggestions
+    // (the "auto" marker stops them being suggested again).
+    { kind: "recovery", actionType: "reset-creds-recovery", auto: "rec:reset-credentials",
+      title: "Whole domain credential reset by tier (in waves): Tier 0, then Tier 1, then Tier 2",
+      priority: "p2", owner: "msp", status: "planned" },
+    { kind: "recovery", actionType: "rebuild", auto: "rec:rebuild:acme-ws114", targets: ["ACME-WS114"],
+      title: "Rebuild / reimage ACME-WS114", priority: "p2", owner: "client", ownerName: "Dana Reyes", status: "planned" },
     { kind: "task", title: "Send the list of servers not covered by Veeam", priority: "p2",
       owner: "client", ownerName: "Dana Reyes", dueH: -3, status: "planned" },
     { kind: "task", title: "Confirm last good restore point for ACME-FS01", targets: ["ACME-FS01"],

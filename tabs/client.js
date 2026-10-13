@@ -679,6 +679,7 @@ App.tabs.client = {
         <p class="muted small">BC-01 is #1 on the business critical list (restored first); the number follows the order.
           AD tier: Tier 0 = identity / control plane (DCs, Entra Connect, AD CS, ADFS, PAM, backup / hypervisor / RMM with domain admin) ·
           Tier 1 = servers and apps · Tier 2 = workstations and users.</p>
+        ${App.tierOrderWarning(c) ? `<p class="error small">⚠ ${App.escapeHtml(App.tierOrderWarning(c))}</p>` : ""}
         ${body}
       </section>
     `;

@@ -116,7 +116,7 @@ App.tabs.tasks = {
     const iocValues = caseObj.iocs.map(function (i) { return i.value.toLowerCase(); });
     const names = [];
     for (const t of caseObj.tasks) {
-      const action = App.CONTAINMENT_ACTIONS.find(function (a) { return a.key === t.actionType; });
+      const action = App.taskAction(t);
       if (action && action.targets === "iocs") {
         continue;                   // like Python's "continue": skip this item
       }
@@ -234,7 +234,7 @@ App.tabs.tasks = {
     // Tags under the title: kind (with the action's hint on hover), targets, approval.
     const tags = [];
     if (t.kind !== "task") {
-      const action = App.CONTAINMENT_ACTIONS.find(function (a) { return a.key === t.actionType; });
+      const action = App.taskAction(t);       // containment or recovery catalog
       const title = action && action.hint ? ` title="Before you do this: ${e(action.hint)}"` : "";
       tags.push(`<span class="tag kind-${e(t.kind)}"${title}>${e(App.labelFor(App.TASK_KINDS, t.kind))}${action && action.hint ? " 💡" : ""}</span>`);
     }
@@ -331,12 +331,12 @@ App.tabs.tasks = {
         return;
       }
       // A common action picked from the list becomes that containment
-      // action (Critical, like "+ Add action" in the Containment Strategy).
-      // Anything else is a General item (Medium).
-      const action = App.containmentActionForTitle(input.value);
-      if (action) {
-        App.addTask(App.state.selectedCaseId, { kind: "containment", actionType: action.key,
-                                                title: input.value, priority: "p1", owner: "me" });
+      // action (Critical, like "+ Add action" in the Containment Strategy)
+      // or recovery action (High). Anything else is a General item (Medium).
+      const found = App.actionForTitle(input.value);
+      if (found) {
+        App.addTask(App.state.selectedCaseId, { kind: found.kind, actionType: found.action.key, title: input.value,
+                                                priority: found.kind === "containment" ? "p1" : "p2", owner: "me" });
       } else {
         App.addTask(App.state.selectedCaseId, { kind: "task", title: input.value, priority: "p3", owner: "me" });
       }
@@ -371,14 +371,14 @@ App.tabs.tasks = {
   },
 
   exportCsv: async function (caseObj, button) {
-    const header = ["Case ID", "ID", "Action type", "Containment action", "Action", "Targets", "Priority", "Owner", "Owner name",
+    const header = ["Case ID", "ID", "Action type", "Catalog action", "Action", "Targets", "Priority", "Owner", "Owner name",
                     "Due (UTC)", "Due from containment window", "Status", "Status reason", "Approved by",
                     "Approved at (UTC)", "Approval method", "Done by", "Done at (UTC)", "Notes", "Created (UTC)"];
     const u = function (text) { return (text || "").replace("T", " "); };
     const rows = caseObj.tasks.map(function (t) {
       const d = App.taskDue(caseObj, t);
       return [caseObj.id, t.id, App.labelFor(App.TASK_KINDS, t.kind),
-              t.actionType ? App.labelFor(App.CONTAINMENT_ACTIONS, t.actionType) : "", t.title, t.targets.join("; "),
+              App.taskAction(t) ? App.taskAction(t).label : "", t.title, t.targets.join("; "),
               App.labelFor(App.TASK_PRIORITIES, t.priority), App.labelFor(App.TASK_OWNERS, t.owner), t.ownerName,
               u(d.due), d.fromWindow ? "yes" : "", App.labelFor(App.TASK_STATUSES, t.status), t.statusReason,
               t.approval.by, u(t.approval.at), App.labelFor(App.APPROVAL_METHODS, t.approval.method),

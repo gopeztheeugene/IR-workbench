@@ -434,7 +434,8 @@
 
       <!-- Containment only: which action from the catalog, and its hint -->
       <div id="task-action-type-row">
-        <label>Containment action
+        <!-- Says "Containment action" or "Recovery action" (core/taskform.js) -->
+        <label><span id="task-action-type-label">Containment action</span>
           <select name="actionType" id="task-action-type"></select>
         </label>
         <div id="task-hint" class="hint-box" hidden></div>

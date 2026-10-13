@@ -1645,6 +1645,52 @@ dialog .chip-input .btn {
   margin-bottom: 8px;
 }
 
+/* Credential reset waves: one card per wave */
+.wave-card {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);       /* grey = not started */
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: var(--panel);
+}
+
+.wave-card.wave-in-progress { border-left-color: var(--sev-medium); }   /* yellow */
+.wave-card.wave-done        { border-left-color: var(--sev-low); opacity: 0.75; }   /* green, faded */
+
+.wave-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wave-head .spacer {
+  flex: 1;
+}
+
+.wave-head select {
+  width: auto;
+}
+
+/* "In scope" and "How" side by side (stacked on narrow windows) */
+.wave-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 4px 20px;
+  font-size: 13px;
+}
+
+.wave-body ul {
+  margin: 2px 0 6px;
+  padding-left: 18px;
+}
+
+.wave-notes {
+  width: 100%;
+  margin-top: 2px;
+}
+
 /* One assumption: text, basis, remove */
 .assumption {
   display: grid;

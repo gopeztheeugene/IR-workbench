@@ -26,6 +26,10 @@ const App = {
     // every time the app opens (NOT saved), and stays open while you work
     // in it, so adding an assumption (which redraws) doesn't fold it away.
     assumptionsOpen: false,
+    // Same idea for the Eradication & Recovery Strategy's suggestions.
+    recoverySuggestionsOpen: false,
+    // ...and the credential reset waves.
+    wavesOpen: false,
 
     // "Highlight empty fields" switch (Client and Summary and Reports
     // tabs, see core/pickers.js). Remembered in localStorage.
@@ -553,6 +557,13 @@ App.caseDefaults = function () {
         // older files; it's just "Notes" on screen.)
         checklistNotes: "",
         windowStart: ""        // UTC. Also the default due time of containment items.
+      },
+      // Eradication & Recovery Strategy. (The actions themselves are
+      // recovery items in case.tasks.)
+      recovery: {
+        order: [],                  // custom order of recovery item IDs; [] = BC order
+        dismissedSuggestions: [],   // suggestion keys the user dismissed
+        waves: {}                   // credential reset waves: { w1: { status, doneAt, notes } }
       }
     }
   };
@@ -664,8 +675,9 @@ App.cleanTask = function (taskData) {
   const pick = function (value, list, fallback) { return keysOf(list).includes(value) ? value : fallback; };
 
   const kind = pick(taskData.kind, App.TASK_KINDS, "task");
-  // Action type (catalog) only applies to containment items.
-  const actionType = kind === "containment" ? pick(taskData.actionType, App.CONTAINMENT_ACTIONS, "") : "";
+  // Action (from a catalog) only applies to containment and recovery items.
+  const catalog = App.catalogFor(kind);
+  const actionType = catalog ? pick(taskData.actionType, catalog.actions, "") : "";
   const status = pick(taskData.status, App.TASK_STATUSES, "planned");
   const statusReason = (taskData.statusReason || "").trim();
   const a = taskData.approval || {};
@@ -818,6 +830,10 @@ App.CONTAINMENT_ACTIONS = [
     hint: "Record the app ID, its permissions, and when it was consented FIRST, then revoke. Check whether other users consented too." },
   { key: "protect-backups", label: "Protect backups (take offline / isolate)", targets: "assets",
     hint: "Do it EARLY in a ransomware case. Confirm the last good restore point and that the backup server / NAS isn't reachable with domain credentials." },
+  { key: "remove-mfa-methods", label: "Remove attacker MFA methods / registered devices", targets: "assets",
+    hint: "Screenshot / export the registered methods first (the attacker's phone number or device is evidence). Do it together with Revoke sessions and the password reset, or the attacker re-registers." },
+  { key: "block-sender", label: "Block the sender / lookalike domain at the email gateway", targets: "iocs",
+    hint: "Block the exact sender and any lookalike domains (e.g. acrne.com for acme.com). Search for other mail from them and purge it." },
   { key: "other", label: "Other (custom action)", targets: "assets", hint: "" }
 ];
 
@@ -826,44 +842,356 @@ App.CONTAINMENT_ACTIONS = [
 // group: it's listed last on its own.
 App.CONTAINMENT_GROUPS = [
   { label: "Endpoint",        keys: ["isolate-edr", "kill-process", "block-lateral"] },
-  { label: "Identities",      keys: ["disable-accounts", "revoke-sessions", "reset-credentials"] },
+  { label: "Identities",      keys: ["disable-accounts", "revoke-sessions", "reset-credentials", "remove-mfa-methods"] },
   { label: "Network",         keys: ["network-segmentation", "disable-vpn", "fw-deny", "sinkhole", "block-iocs"] },
   { label: "Virtual / Cloud", keys: ["hypervisor-isolation", "protect-backups"] },
-  { label: "Email and SaaS",  keys: ["purge-emails", "remove-inbox-rules", "remove-app-consents"] }
+  { label: "Email and SaaS",  keys: ["purge-emails", "remove-inbox-rules", "remove-app-consents", "block-sender"] }
 ];
 
-// The <option>s for a containment action dropdown, grouped with
-// <optgroup> (a bold heading the options sit under; it can't be picked).
-// selectedKey = the option to pre-select, or "" for none.
-App.containmentOptionsHtml = function (selectedKey) {
+// ---------------------------------------------------------------
+// Eradication & Recovery Strategy (Summary and Reports)
+// ---------------------------------------------------------------
+
+// The recovery action catalog: same shape as the containment one.
+// Grouped (App.RECOVERY_GROUPS below) the way the user works: Device,
+// Credentials, General, Control, Enhancement, Network & access, Cloud,
+// Email & Identity for BEC. Some keys are older than their labels (e.g.
+// "remove-persistence" is now "Clean"): keys stay the same so items
+// already saved keep their link to the catalog and its hint.
+App.RECOVERY_ACTIONS = [
+  // Device
+  { key: "remove-persistence", label: "Clean (remove files and persistence)", targets: "assets",
+    hint: "List every attacker file and persistence item first (Storyline, EDR, IOCs tab, Invoke-TriageCheck: services, scheduled tasks, run keys, WMI, startup), keep hashed copies as evidence, then remove them all in one go. Confirm with a fresh scan. Prefer a rebuild for hosts with hands-on-keyboard activity." },
+  { key: "rebuild", label: "Rebuild / reimage", targets: "assets",
+    hint: "Preferred for hosts with hands-on-keyboard activity: cleaning can miss persistence. Use a known-good image, and preserve evidence first (the evidence preservation item)." },
+  { key: "restore-backup", label: "Restore from backup", targets: "assets",
+    hint: "Restore into an isolated network first, scan it, then reconnect. Restore in the agreed order: Tier 0 (identity) first." },
+
+  // Credentials
+  { key: "reset-creds-recovery", label: "Whole domain credential reset by tier (in waves)", targets: "assets",
+    hint: "Follow the Credential reset waves (this section): Tier 0 accounts, 1st krbtgt, service accounts, 2nd krbtgt (after replication and the 10-hour TGT lifetime), local accounts, then all users. Never all at once. Before reconnecting restored systems." },
+  { key: "patient-zero", label: "Patient 0 credentials (the first compromised user / host)", targets: "assets",
+    hint: "Reset the password, revoke sessions, and clear / re-register MFA for the first compromised account, plus any credentials cached or saved on the first compromised host (browser passwords, RDP, scripts)." },
+  { key: "rotate-secrets", label: "Rotate secrets (API keys, certificates, SSH keys, tokens)", targets: "assets",
+    hint: "Anything that was stored on, or reachable from, a compromised host or account: API keys, app secrets, service principal credentials, certificates (and their private keys), SSH keys, PATs. List them first, then rotate and update where they're used." },
+
+  // General
+  { key: "threat-hunt", label: "Threat hunt for all available IOCs of the threat actor", targets: "iocs",
+    hint: "Search every host and log source (EDR, SIEM, firewall, M365) for all the IOCs (IOCs tab), not just the hosts you know about. New hits mean the scope grew: update Assets and the plan." },
+  { key: "verify-backup", label: "Verify the backup is clean before restoring", targets: "assets",
+    hint: "Pick a restore point from BEFORE the earliest attacker activity, and assume the attacker was in earlier than the logs show. Scan the backup for attacker tools and persistence; check it isn't encrypted." },
+
+  // Control
+  { key: "vuln-management", label: "Vulnerability management", targets: "assets",
+    hint: "Scan for and patch the other exposed or vulnerable systems, not only the one that was exploited. Start with internet-facing systems (VPN, firewalls, RDP, web apps)." },
+  { key: "remove-accounts", label: "Remove accounts – AD, local and cloud", targets: "assets",
+    hint: "Remove or disable accounts that aren't needed: stale users, old service accounts, extra local admins, unused cloud / guest accounts. Fewer accounts, fewer ways back in." },
+  { key: "hardening", label: "Hardening", targets: "assets",
+    hint: "E.g. LAPS for local admin passwords, remove local admin rights, disable SMBv1 / NTLMv1, restrict RDP / WinRM, ASR rules, tiered admin accounts. Agree the list with the client." },
+  { key: "mfa", label: "MFA (incl. VPN MFA)", targets: "assets",
+    hint: "MFA on every remote access path: VPN, M365 / Entra ID, RDP gateways, admin portals, the RMM. Check for accounts excluded from MFA policies." },
+  { key: "remove-attacker-accounts", label: "Remove attacker accounts, keys and app registrations", targets: "assets",
+    hint: "Check AD, Entra ID (guest users, app registrations / service principals with new secrets), cloud IAM and the RMM's admins. Record each one before deleting it." },
+  { key: "close-entry", label: "Patch initial access", targets: "assets",
+    hint: "Fix the root cause before reconnecting anything: patch the exploited system, remove the exposed service, add MFA. Otherwise the attacker walks back in." },
+
+  // Enhancement
+  { key: "monitoring", label: "Enhanced monitoring", targets: "assets",
+    hint: "Agree how long (e.g. 2 to 4 weeks) and what to watch: the IOCs, the entry point, new admin accounts, RMM activity. Attackers often come back through something that was missed." },
+  { key: "security-stack", label: "Enhanced security stack", targets: "assets",
+    hint: "Close the gaps this incident showed: EDR on devices that didn't have it, SIEM log sources, email security, backup immutability. Tie each to what was missing (Client tab)." },
+  { key: "confirm-edr", label: "Confirm EDR on every restored device", targets: "assets",
+    hint: "Each restored device should show as healthy in the EDR console before it rejoins the network." },
+
+  // Network & access
+  { key: "reconnect", label: "Reconnect to the network / lift isolation", targets: "assets",
+    hint: "Only after eradication, credential resets, and EDR are confirmed on the device. Reconnect in the agreed order, Tier 0 first." },
+  { key: "reenable-vpn", label: "Re-enable VPN (patched, with MFA)", targets: "assets",
+    hint: "Patched firmware, MFA on, local VPN users reviewed, logging on and forwarded to the SIEM." },
+
+  // Cloud (starter set: to be adjusted)
+  { key: "az-rbac", label: "Azure: review role assignments and remove attacker ones", targets: "assets",
+    hint: "Check Owner, Contributor and User Access Administrator assignments at every scope (management group, subscription, resource group), plus Entra ID directory roles. Record before removing." },
+  { key: "az-rotate", label: "Azure: rotate keys and secrets (storage keys, SAS, Key Vault, service principals)", targets: "assets",
+    hint: "Storage account keys (which also invalidates SAS signed with them), Key Vault secrets, service principal / app credentials, automation account credentials. Update where they're used." },
+  { key: "az-resources", label: "Azure: remove attacker-created resources (VMs, runbooks, Logic Apps, functions)", targets: "assets",
+    hint: "Use the Activity log to list what the attacker created or changed, in every subscription. Snapshot / export first if it's evidence." },
+  { key: "az-logging", label: "Azure: Defender for Cloud and activity / diagnostic log retention on", targets: "assets",
+    hint: "Activity log and diagnostic settings sent to Log Analytics / Sentinel with enough retention; Defender for Cloud plans on for the affected resource types." },
+  { key: "aws-iam", label: "AWS: review IAM users, roles, access keys and policies; remove attacker ones", targets: "assets",
+    hint: "Look for new users, access keys, roles with trust to unknown accounts, and changed policies. Check every account in the AWS Organization. Record before removing." },
+  { key: "aws-rotate", label: "AWS: rotate access keys and secrets (Secrets Manager, SSM parameters)", targets: "assets",
+    hint: "Access keys of every affected IAM user, Secrets Manager secrets, SSM SecureString parameters, and keys on affected instances. Update where they're used." },
+  { key: "aws-resources", label: "AWS: remove attacker-created resources in every region (EC2, Lambda, roles)", targets: "assets",
+    hint: "Attackers often use regions you don't normally use (e.g. for crypto mining). Use CloudTrail to list what they created, in every region." },
+  { key: "aws-logging", label: "AWS: CloudTrail (all regions), GuardDuty and Config on", targets: "assets",
+    hint: "An organization-wide, all-regions CloudTrail with log file validation, GuardDuty in every region, and AWS Config, with logs kept long enough for the next investigation." },
+
+  // Email & Identity for BEC
+  { key: "bec-reset-mfa", label: "Reset MFA methods and re-register (remove attacker devices)", targets: "assets",
+    hint: "List the registered methods and devices first (evidence: attacker phone numbers / authenticator apps). Remove them all, then have the user re-register in person or over a verified call." },
+  { key: "reenable-accounts", label: "Re-enable accounts (after reset and MFA re-registration)", targets: "assets",
+    hint: "Reset the password and clear / re-register MFA methods first; check inbox rules, forwarding and app consents again." },
+  { key: "bec-rule-sweep", label: "Tenant-wide sweep for malicious inbox / forwarding / transport rules", targets: "assets",
+    hint: "Not just the known mailboxes: attackers often add rules to others (e.g. names like '.', '..', or rules that move mail to RSS Feeds / Archive). Check mailbox forwarding and transport rules too." },
+  { key: "bec-review-sent", label: "Review mail sent by the attacker (message trace / sent items)", targets: "assets",
+    hint: "Find who received phishing or fake invoices from the compromised mailbox, so they can be warned. Export the message trace before it ages out (10 days in the standard trace)." },
+  { key: "bec-notify-contacts", label: "Notify affected contacts / vendors (fraud warning)", targets: "assets",
+    hint: "Send from a known-good channel, not the compromised mailbox. Agree the wording with the client (and legal / breach coach): state facts, don't assume." },
+  { key: "bec-payment-recall", label: "Contact the bank to recall / freeze fraudulent payments", targets: "assets",
+    hint: "Time-critical: the sooner the bank is told, the better the chance of a recall. Record amounts, dates, account numbers, and who was contacted. Tell the insurer." },
+  { key: "bec-conditional-access", label: "Harden sign-in: block legacy auth, Conditional Access", targets: "assets",
+    hint: "Block legacy authentication (IMAP / POP / SMTP AUTH), and consider blocking sign-ins from unexpected countries or unmanaged devices. Check for break-glass accounts before enforcing." },
+  { key: "bec-oauth-review", label: "Review OAuth app consents tenant-wide", targets: "assets",
+    hint: "Look for apps with mail / file permissions consented recently or by many users. Consider restricting user consent to verified publishers." },
+  { key: "bec-audit-logging", label: "Make sure mailbox auditing and audit log retention are on", targets: "assets",
+    hint: "Unified audit log and mailbox auditing on, with enough retention for the next investigation. Missing logs are blind spots, not clean results." },
+
+  { key: "other", label: "Other (custom action)", targets: "assets", hint: "" }
+];
+
+App.RECOVERY_GROUPS = [
+  { label: "Device",                   keys: ["remove-persistence", "rebuild", "restore-backup"] },
+  { label: "Credentials",              keys: ["reset-creds-recovery", "patient-zero", "rotate-secrets"] },
+  { label: "General",                  keys: ["threat-hunt", "verify-backup"] },
+  { label: "Control",                  keys: ["vuln-management", "remove-accounts", "hardening", "mfa",
+                                              "remove-attacker-accounts", "close-entry"] },
+  { label: "Enhancement",              keys: ["monitoring", "security-stack", "confirm-edr"] },
+  { label: "Network & access",         keys: ["reconnect", "reenable-vpn"] },
+  { label: "Cloud",                    keys: ["az-rbac", "az-rotate", "az-resources", "az-logging",
+                                              "aws-iam", "aws-rotate", "aws-resources", "aws-logging"] },
+  { label: "Email & Identity for BEC", keys: ["bec-reset-mfa", "reenable-accounts", "bec-rule-sweep", "bec-review-sent",
+                                              "bec-notify-contacts", "bec-payment-recall", "bec-conditional-access",
+                                              "bec-oauth-review", "bec-audit-logging"] }
+];
+
+// ---- Shared by both catalogs ----
+
+// The catalog and groups for an item kind, or null for "General" items.
+App.catalogFor = function (kind) {
+  if (kind === "containment") {
+    return { actions: App.CONTAINMENT_ACTIONS, groups: App.CONTAINMENT_GROUPS };
+  }
+  if (kind === "recovery") {
+    return { actions: App.RECOVERY_ACTIONS, groups: App.RECOVERY_GROUPS };
+  }
+  return null;
+};
+
+// The catalog entry an item was made from (with its hint), or null.
+App.taskAction = function (t) {
+  const catalog = App.catalogFor(t.kind);
+  if (!catalog || !t.actionType) {
+    return null;
+  }
+  return catalog.actions.find(function (a) { return a.key === t.actionType; }) || null;
+};
+
+// The <option>s for an action dropdown, grouped with <optgroup> (a bold
+// heading the options sit under; it can't be picked). kind = "containment"
+// or "recovery"; selectedKey = the option to pre-select, or "".
+App.actionOptionsHtml = function (kind, selectedKey) {
   const e = App.escapeHtml;
+  const catalog = App.catalogFor(kind);
   function option(a) {
     return `<option value="${e(a.key)}"${a.key === selectedKey ? " selected" : ""}>${e(a.label)}</option>`;
   }
   const grouped = [];
-  let html = App.CONTAINMENT_GROUPS.map(function (g) {
+  let html = catalog.groups.map(function (g) {
     const options = g.keys
-      .map(function (key) { return App.CONTAINMENT_ACTIONS.find(function (a) { return a.key === key; }); })
+      .map(function (key) { return catalog.actions.find(function (a) { return a.key === key; }); })
       .filter(Boolean)                    // skip a key with no action (typo safety)
       .map(function (a) { grouped.push(a.key); return option(a); })
       .join("");
     return `<optgroup label="${e(g.label)}">${options}</optgroup>`;
   }).join("");
   // Anything not in a group ("Other", or a new action not grouped yet) goes last.
-  html += App.CONTAINMENT_ACTIONS
+  html += catalog.actions
     .filter(function (a) { return !grouped.includes(a.key); })
     .map(option)
     .join("");
   return html;
 };
 
-// Is this text exactly one of the catalog's actions (e.g. picked from the
-// Action pick list)? Returns that action, or null. Ignores upper / lower case.
-App.containmentActionForTitle = function (title) {
+// Old name for the containment dropdown, kept so nothing breaks.
+App.containmentOptionsHtml = function (selectedKey) {
+  return App.actionOptionsHtml("containment", selectedKey);
+};
+
+// Is this text exactly one of the catalogs' actions (e.g. picked from the
+// Action pick list)? Returns { kind, action }, or null. Ignores case.
+App.actionForTitle = function (title) {
   const wanted = String(title || "").trim().toLowerCase();
-  return App.CONTAINMENT_ACTIONS.find(function (a) {
-    return a.key !== "other" && a.label.toLowerCase() === wanted;
-  }) || null;
+  for (const kind of ["containment", "recovery"]) {
+    const action = App.catalogFor(kind).actions.find(function (a) {
+      return a.key !== "other" && a.label.toLowerCase() === wanted;
+    });
+    if (action) {
+      return { kind: kind, action: action };
+    }
+  }
+  return null;
+};
+
+// Containment only (older callers).
+App.containmentActionForTitle = function (title) {
+  const found = App.actionForTitle(title);
+  return found && found.kind === "containment" ? found.action : null;
+};
+
+// ---- Recovery order ----
+// Recovery happens in order (unlike containment). The default order is
+// the client's business critical list (BC-01 first): an item's place is
+// the BC position of its first target that's on that list. Items with
+// no BC target come after, oldest first. Moving an item (↑ / ↓) saves a
+// custom order in summary.recovery.order; "Reset to BC order" clears it.
+
+// An item's default position: the BC number of its first critical target.
+App.recoveryBcPosition = function (caseObj, t) {
+  let best = Infinity;                      // "no BC target" sorts last
+  for (const target of t.targets) {
+    const match = App.criticalMatch(caseObj, target);
+    if (match && match.position < best) {
+      best = match.position;
+    }
+  }
+  return best;
+};
+
+// The recovery items in order: the saved custom order first (if any),
+// then any items not in it, in BC order.
+App.recoveryItems = function (caseObj) {
+  const items = caseObj.tasks.filter(function (t) { return t.kind === "recovery"; });
+  const saved = caseObj.summary.recovery.order;
+  const inSaved = saved
+    .map(function (id) { return items.find(function (t) { return t.id === id; }); })
+    .filter(Boolean);
+  const rest = items
+    .filter(function (t) { return !saved.includes(t.id); })
+    .sort(function (a, b) {
+      const pa = App.recoveryBcPosition(caseObj, a);
+      const pb = App.recoveryBcPosition(caseObj, b);
+      if (pa !== pb) {
+        return pa < pb ? -1 : 1;
+      }
+      return a.id.localeCompare(b.id);       // TK-003 before TK-007: oldest first
+    });
+  return inSaved.concat(rest);
+};
+
+// Move one recovery item up (step -1) or down (+1); saves the new order.
+App.moveRecoveryItem = function (caseId, taskId, step) {
+  const c = App.findCase(caseId);
+  const ids = App.recoveryItems(c).map(function (t) { return t.id; });
+  const i = ids.indexOf(taskId);
+  const j = i + step;
+  if (i === -1 || j < 0 || j >= ids.length) {
+    return false;
+  }
+  const temp = ids[i];
+  ids[i] = ids[j];
+  ids[j] = temp;
+  c.summary.recovery.order = ids;
+  return true;
+};
+
+App.resetRecoveryOrder = function (caseId) {
+  App.findCase(caseId).summary.recovery.order = [];
+};
+
+// Is the business critical list out of tier order (a non-Tier-0 asset
+// before a Tier 0 one)? Identity has to come back first. Returns a
+// message, or "" when it's fine.
+App.tierOrderWarning = function (caseObj) {
+  const list = caseObj.clientInfo.criticalAssets;
+  const firstTier0 = list.findIndex(function (a) { return a.tier === "t0"; });
+  if (firstTier0 <= 0) {
+    return "";                              // no Tier 0, or it's already first
+  }
+  const before = list.slice(0, firstTier0).filter(function (a) { return a.tier !== "t0"; });
+  if (before.length === 0) {
+    return "";
+  }
+  const label = function (a) { return App.criticalLabel(list.indexOf(a) + 1) + " " + (a.name || "(no name)"); };
+  return label(before[0]) + " is " + (before[0].tier ? App.labelFor(App.AD_TIERS, before[0].tier) : "not tiered") +
+    ", but Tier 0 " + label(list[firstTier0]) + " comes later: recover Tier 0 (identity) first.";
+};
+
+App.dismissRecoverySuggestion = function (caseId, key) {
+  const r = App.findCase(caseId).summary.recovery;
+  if (!r.dismissedSuggestions.includes(key)) {
+    r.dismissedSuggestions.push(key);
+  }
+};
+
+// ---- Credential reset waves (whole domain) ----
+// A domain-wide reset is done in waves, in this order, never all at once.
+// Each wave: what's in scope ("what") and how to do it safely ("how").
+// Progress per case: summary.recovery.waves = { w1: { status, doneAt, notes }, ... }.
+App.CREDENTIAL_WAVES = [
+  { key: "w1", title: "Tier 0 accounts", tag: "Highest risk",
+    what: ["Domain Admins and Enterprise Admins",
+           "Accounts with replication rights (DCSync: \"Replicating Directory Changes All\")",
+           "Accounts used to manage domain controllers, PKI (AD CS) and identity infrastructure (Entra Connect, ADFS)"],
+    how:  ["Done first, by a small trusted team",
+           "Only from clean admin workstations, never from a machine that may be compromised"] },
+  { key: "w2", title: "First krbtgt reset", tag: "",
+    what: ["Reset the krbtgt account's password (first time)"],
+    how:  ["This starts invalidating forged (golden) and existing Kerberos tickets (TGTs)",
+           "Check AD replication health before and after (e.g. repadmin /replsummary)"] },
+  { key: "w3", title: "Service accounts", tag: "Most dangerous phase",
+    what: ["Passwords stored in plain text (scripts, config files)",
+           "SQL Server", "IIS application pools", "Applications", "Scheduled tasks", "Windows services"],
+    how:  ["Inventory first: every service account, where its password is used, and who owns the application",
+           "Change the password, update it everywhere it's used, then restart and test with the application owner",
+           "These often break production: agree a change window"] },
+  { key: "w4", title: "Second krbtgt reset", tag: "",
+    what: ["Reset the krbtgt account's password a second time"],
+    how:  ["First wait for AD replication to converge on every DC, and ideally past the maximum TGT lifetime (10 hours by default)",
+           "Two quick resets in a row can break Kerberos authentication across the whole domain",
+           "Microsoft's krbtgt reset script (New-KrbtgtKeys.ps1) helps with validation"] },
+  { key: "w5", title: "Local accounts", tag: "Often forgotten",
+    what: ["Passwords stored in plain text", "Local Administrator", "Shared admin accounts", "Emergency (break-glass) admin accounts"],
+    how:  ["Many ransomware actors capture local admin credentials",
+           "If using Windows LAPS (each device gets its own random local admin password, stored in AD or Entra ID and changed on a schedule): force an early rotation: Reset-LapsPassword on the device, Set-LapsADPasswordExpirationTime for AD-backed devices, or Intune's \"Rotate local admin password\" device action (legacy Microsoft LAPS: Reset-AdmPwdPassword)",
+           "No LAPS: set a unique password per device, and consider Windows LAPS afterwards (Control: Hardening)"] },
+  { key: "w6", title: "General users", tag: "Largest volume",
+    what: ["All user accounts"],
+    how:  ["Force it with \"User must change password at next logon\", or a self-service password reset (SSPR) workflow",
+           "For cloud / hybrid users, also revoke sessions and check MFA methods"] }
+];
+
+// The communication side of the reset (shown with the waves and in the plan).
+App.WAVE_COMMS = {
+  note: "The technical work is maybe 30%. The rest is communication.",
+  notify: ["Executives", "IT Operations", "Helpdesk", "Application owners", "Users"],
+  issues: ["Account lockouts", "Cached passwords", "Mobile device prompts", "VPN failures"],
+  helpdesk: "Helpdesk staffing often needs to be increased temporarily."
+};
+
+App.WAVE_STATUSES = [
+  { key: "",            label: "Not started" },
+  { key: "in-progress", label: "In progress" },
+  { key: "done",        label: "Done" }
+];
+
+// One wave's progress (with defaults if it hasn't been touched yet).
+App.waveState = function (caseObj, key) {
+  return Object.assign({ status: "", doneAt: "", notes: "" }, caseObj.summary.recovery.waves[key] || {});
+};
+
+// Change one wave's status or notes. Done stamps doneAt (UTC); anything
+// else clears it, like action items.
+App.setWaveField = function (caseId, key, field, value) {
+  const waves = App.findCase(caseId).summary.recovery.waves;
+  const w = Object.assign({ status: "", doneAt: "", notes: "" }, waves[key] || {});
+  if (field === "status") {
+    w.status = value;
+    w.doneAt = value === "done" ? (w.doneAt || App.time.nowUtc()) : "";
+  } else if (field === "notes") {
+    w.notes = value;
+  }
+  waves[key] = w;
 };
 
 // ---- Evidence preservation: one action item per affected asset ----
