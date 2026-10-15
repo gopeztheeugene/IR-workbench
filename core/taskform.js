@@ -25,6 +25,23 @@ App.taskForm = {
     return shown.date + " " + shown.clock.slice(0, 5) + " " + shown.zoneLabel;
   },
 
+  // Sort action items: priority (Critical first), then due time (items
+  // without one last). Uses each item's effective due time (own, or the
+  // containment window). Use with .sort(App.taskForm.comparator(caseObj)).
+  comparator: function (caseObj) {
+    return function (a, b) {
+      if (a.priority !== b.priority) {
+        return a.priority.localeCompare(b.priority);        // "p1" < "p2" < ...
+      }
+      const da = App.taskDue(caseObj, a).due;
+      const db = App.taskDue(caseObj, b).due;
+      if (da === "" && db === "") { return 0; }
+      if (da === "") { return 1; }
+      if (db === "") { return -1; }
+      return da.localeCompare(db);
+    };
+  },
+
   // The due cell: time (or the containment window), plus overdue / due soon.
   DUE_SOON_HOURS: 2,
   dueHtml: function (caseObj, t) {

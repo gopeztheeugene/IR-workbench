@@ -567,6 +567,7 @@
     <nav class="tabs">
       <button class="tab active" data-tab="client">Client</button>
       <button class="tab" data-tab="summary">Summary and Reports</button>
+      <button class="tab" data-tab="calls">Calls</button>
       <button class="tab" data-tab="storyline">Storyline</button>
       <!-- Label "Action Items" (+ open count, set by app.js); key stays "tasks" -->
       <button class="tab" data-tab="tasks">Action Items</button>
@@ -581,6 +582,7 @@
          They start empty: each tab's file in tabs/ draws the content. -->
     <section class="panel active" id="client"></section>
     <section class="panel" id="summary"></section>
+    <section class="panel" id="calls"></section>
     <section class="panel" id="storyline"></section>
     <section class="panel" id="tasks"></section>
     <section class="panel" id="evidence"></section>
@@ -612,6 +614,7 @@
   <script src="core/sidebar.js"></script>
   <script src="tabs/client.js"></script>
   <script src="tabs/summary.js"></script>
+  <script src="tabs/calls.js"></script>
   <script src="tabs/storyline.js"></script>
   <script src="tabs/tasks.js"></script>
   <script src="tabs/evidence.js"></script>

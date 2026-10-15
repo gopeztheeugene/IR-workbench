@@ -209,20 +209,10 @@ App.tabs.tasks = {
             </div>`;
   },
 
-  // Sort: priority (Critical first), then due time (items without one last).
-  // Uses each item's effective due time (own, or the containment window).
+  // Sort: priority, then due time. Lives in core/taskform.js
+  // (App.taskForm.comparator) so other tabs can sort the same way.
   comparator: function (caseObj) {
-    return function (a, b) {
-      if (a.priority !== b.priority) {
-        return a.priority.localeCompare(b.priority);        // "p1" < "p2" < ...
-      }
-      const da = App.taskDue(caseObj, a).due;
-      const db = App.taskDue(caseObj, b).due;
-      if (da === "" && db === "") { return 0; }
-      if (da === "") { return 1; }
-      if (db === "") { return -1; }
-      return da.localeCompare(db);
-    };
+    return App.taskForm.comparator(caseObj);
   },
 
   // One table row.

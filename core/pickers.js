@@ -63,6 +63,26 @@ App.refreshPicker = function (input) {
 App.refreshAssetPicker = App.refreshPicker;
 
 // ---------------------------------------------------------------
+// HOVER REMINDERS: a circled "?" that shows a list while the mouse is
+// over it. Pure CSS (see .help-tip in style.css): no click, no JavaScript.
+// reminders = [{ text, strong }] (strong = highlighted).
+// Python equivalent: def reminders_tip_html(reminders): ...
+// ---------------------------------------------------------------
+App.remindersTipHtml = function (reminders) {
+  const e = App.escapeHtml;
+  const items = reminders
+    .map(function (r) { return `<li${r.strong ? ' class="reminder-key"' : ""}>${e(r.text)}</li>`; })
+    .join("");
+  return `
+    <span class="help-tip" aria-label="Reminders">?
+      <span class="help-tip-box">
+        <strong>Reminders</strong>
+        <ul>${items}</ul>
+      </span>
+    </span>`;
+};
+
+// ---------------------------------------------------------------
 // HIGHLIGHT EMPTY FIELDS (like Google Forms' red "required" boxes)
 // ---------------------------------------------------------------
 // A tab that wants it (Client, Summary and Reports):

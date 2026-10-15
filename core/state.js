@@ -30,6 +30,12 @@ const App = {
     recoverySuggestionsOpen: false,
     // ...and the credential reset waves.
     wavesOpen: false,
+    // Calls tab: which briefs are folded open ({ "BR-002": true }).
+    // Not saved; when a brief isn't listed, only the newest one is open.
+    openCalls: {},
+    // The brief section being edited ("BR-002:since"), or null: that one
+    // shows its text box, the rest show the formatted view.
+    editingBriefSection: null,
 
     // "Highlight empty fields" switch (Client and Summary and Reports
     // tabs, see core/pickers.js). Remembered in localStorage.
@@ -528,6 +534,12 @@ App.caseDefaults = function () {
     tasks: [],
     nextTaskNumber: 1,
 
+    // Calls tab: one pre-call brief per client call (BR-001...), newest
+    // last. Each is a SNAPSHOT: drafted from the case when created, then
+    // edited by hand, so it stays a record of what was said. See App.addCall.
+    calls: [],
+    nextCallNumber: 1,
+
     // Summary and Reports tab: incident summary + impact assessment.
     summary: {
       detectedAt: "",          // UTC
@@ -755,9 +767,103 @@ App.addTask = function (caseId, taskData) {
   const id = "TK-" + String(c.nextTaskNumber).padStart(3, "0");
   // "auto": set on items the app creates by itself, e.g.
   // "preserve-evidence:AS-001" (see App.addPreservationTask). "" = added by hand.
-  c.tasks.push({ id: id, ...result.fields, auto: taskData.auto || "", createdAt: App.time.nowUtc() });
+  const now = App.time.nowUtc();
+  c.tasks.push({ id: id, ...result.fields, auto: taskData.auto || "", createdAt: now,
+                 // Created already closed (e.g. logged after the fact)? Closed now.
+                 closedAt: App.taskIsOpen(result.fields) ? "" : now });
   c.nextTaskNumber = c.nextTaskNumber + 1;
   return { id: id };
+};
+
+// ---------------------------------------------------------------
+// Calls tab: pre-call briefs
+// ---------------------------------------------------------------
+// Each brief:
+//   { id: "BR-001", type, callAt (UTC), nextCallAt (UTC), attendees: [names],
+//     attendeesOther, sections: { where, since, impact, ... } (editable text),
+//     notes, decisions, heldAt (UTC, "" = not held yet), createdAt,
+//     counters: { story, evidence, ioc, asset, task } }
+// "counters" are the case's next-ID numbers when the brief was made (e.g.
+// story: 7 = the next Storyline entry will be ST-007), so the NEXT brief
+// can tell what's new since: anything numbered from there on.
+
+App.CALL_TYPES = [
+  { key: "initial",     label: "Initial / scoping" },
+  { key: "status",      label: "Status update" },
+  { key: "containment", label: "Containment approval" },
+  { key: "recovery",    label: "Recovery" },
+  { key: "executive",   label: "Executive briefing" },
+  { key: "insurer",     label: "Insurer / breach coach" },
+  { key: "closing",     label: "Closing" }
+];
+
+// Add a brief (the drafted section texts come from the Calls tab, which
+// builds them from the case). Returns the new ID.
+App.addCall = function (caseId, data) {
+  const c = App.findCase(caseId);
+  const id = "BR-" + String(c.nextCallNumber).padStart(3, "0");
+  c.calls.push({
+    id: id,
+    type: data.type || "status",
+    callAt: data.callAt || "",
+    nextCallAt: "",
+    attendees: [],
+    attendeesOther: "",
+    sections: data.sections || {},
+    notes: "",
+    decisions: "",
+    heldAt: "",
+    createdAt: App.time.nowUtc(),
+    counters: {
+      story: c.nextStoryNumber, evidence: c.nextEvidenceNumber, ioc: c.nextIocNumber,
+      asset: c.nextAssetNumber, task: c.nextTaskNumber
+    }
+  });
+  c.nextCallNumber = c.nextCallNumber + 1;
+  return id;
+};
+
+App.findCall = function (caseId, callId) {
+  return App.findCase(caseId).calls.find(function (b) { return b.id === callId; }) || null;
+};
+
+// Change one field: "type", "callAt", "nextCallAt", "attendeesOther",
+// "notes", "decisions", "heldAt", or a section as "sections.where".
+App.updateCall = function (caseId, callId, key, value) {
+  const b = App.findCall(caseId, callId);
+  if (!b) {
+    return false;
+  }
+  if (key.startsWith("sections.")) {
+    b.sections[key.slice("sections.".length)] = value;     // slice(9) = text after "sections."
+  } else if (key in b && key !== "id" && key !== "counters" && key !== "createdAt") {
+    b[key] = value;
+  } else {
+    return false;
+  }
+  return true;
+};
+
+// Tick / untick one attendee (a name from the Client tab's IR team list).
+App.toggleCallAttendee = function (caseId, callId, name, on) {
+  const b = App.findCall(caseId, callId);
+  if (!b) {
+    return;
+  }
+  b.attendees = b.attendees.filter(function (n) { return n !== name; });
+  if (on) {
+    b.attendees.push(name);
+  }
+};
+
+App.deleteCall = function (caseId, callId) {
+  const c = App.findCase(caseId);
+  c.calls = c.calls.filter(function (b) { return b.id !== callId; });
+};
+
+// The number in an ID: "ST-007" -> 7 (used for "new since the last call").
+App.idNumber = function (id) {
+  return parseInt(String(id).split("-").pop(), 10) || 0;
 };
 
 App.findTask = function (caseId, taskId) {
@@ -778,7 +884,15 @@ App.updateTask = function (caseId, taskId, taskData) {
   if (result.error) {
     return result.error;
   }
+  const wasOpen = App.taskIsOpen(t);
   Object.assign(t, result.fields);
+  // closedAt: when it was closed (Done OR Not needed), so the Calls tab
+  // can tell what was closed since the last brief. Reopening clears it.
+  if (wasOpen && !App.taskIsOpen(t)) {
+    t.closedAt = App.time.nowUtc();
+  } else if (App.taskIsOpen(t)) {
+    t.closedAt = "";
+  }
   return null;
 };
 
@@ -1392,6 +1506,7 @@ App.upgradeCase = function (c) {
     [c, "storyline", "nextStoryNumber"],
     [c, "iocs", "nextIocNumber"],
     [c, "tasks", "nextTaskNumber"],
+    [c, "calls", "nextCallNumber"],
     [c.summary.containment, "assumptions", "nextAssumptionNumber"],
     [c.clientInfo, "people", "nextPersonNumber"],
     [c.clientInfo, "criticalAssets", "nextCriticalNumber"],
@@ -1416,6 +1531,10 @@ App.upgradeCase = function (c) {
     }
     if (t.auto === undefined) {
       t.auto = "";
+    }
+    // Older items: closed ones use their done time if they have one.
+    if (t.closedAt === undefined) {
+      t.closedAt = App.taskIsOpen(t) ? "" : (t.doneAt || "");
     }
   }
   // AD tier, added later to assets and critical assets.

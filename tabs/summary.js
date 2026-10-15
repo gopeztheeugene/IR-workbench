@@ -77,21 +77,10 @@ App.tabs.summary = {
     { text: "Expect lockouts, cached passwords, mobile device prompts and VPN failures: increase helpdesk staffing for the reset." }
   ],
 
-  // A circled "?" that shows a list of reminders while the mouse is over it.
-  // Pure CSS (see .help-tip in style.css): no click, no JavaScript.
-  // Python equivalent: def reminders_tip_html(reminders): ...
+  // The hover "?" lives in core/pickers.js (App.remindersTipHtml) so other
+  // tabs (e.g. Calls) can use it too; this name is kept for this file.
   remindersTipHtml: function (reminders) {
-    const e = App.escapeHtml;
-    const items = reminders
-      .map(function (r) { return `<li${r.strong ? ' class="reminder-key"' : ""}>${e(r.text)}</li>`; })
-      .join("");
-    return `
-      <span class="help-tip" aria-label="Reminders">?
-        <span class="help-tip-box">
-          <strong>Reminders</strong>
-          <ul>${items}</ul>
-        </span>
-      </span>`;
+    return App.remindersTipHtml(reminders);
   },
 
   // ---------------------------------------------------------------

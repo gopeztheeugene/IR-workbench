@@ -1645,6 +1645,133 @@ dialog .chip-input .btn {
   margin-bottom: 8px;
 }
 
+/* ---------- Calls tab: pre-call briefs ---------- */
+
+/* One brief: a fold-away card (<details>) */
+.brief {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  background: var(--bg);
+}
+
+.brief > summary {
+  cursor: pointer;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.brief[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.brief-body {
+  padding: 8px 14px 12px;
+}
+
+/* One drafted section: a card with a title bar (Edit / ↻ Redraft on the
+   right), then the formatted view or the text box. */
+.brief-section {
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 8px 14px 10px;
+}
+
+/* Internal-only sections (working assumptions): a yellow edge */
+.brief-section.brief-internal {
+  border-left-color: var(--sev-medium);
+}
+
+.brief-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.brief-section-head .spacer {
+  flex: 1;
+}
+
+.brief-title {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+/* The formatted view: sub-headings, bullets, paragraphs */
+.brief-view {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.brief-view p {
+  margin: 4px 0 6px;
+}
+
+.brief-view ul {
+  margin: 2px 0 8px;
+  padding-left: 20px;
+}
+
+.brief-view li {
+  margin-bottom: 3px;
+}
+
+/* "New in the Storyline", "Functional: High", ... */
+.brief-sub {
+  margin: 10px 0 2px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.brief-sub:first-child {
+  margin-top: 4px;
+}
+
+/* IDs (TK-009, ST-005...) in a lighter colour so the words stand out */
+.brief-id {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* The section boxes and the "Call type" dropdown: same dark style as the
+   other fields (the browser's default textarea is grey and monospace). */
+.brief-section textarea,
+#call-new-type {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+#call-new-type {
+  width: auto;
+  padding: 5px 8px;
+}
+
+.brief-section textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.brief-after {
+  margin: 16px 0 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
 /* Credential reset waves: one card per wave */
 .wave-card {
   border: 1px solid var(--line);

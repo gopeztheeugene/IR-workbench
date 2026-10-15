@@ -45,6 +45,11 @@ No server, no install, no build step, no internet connection needed.
   - Recovery actions from a catalog grouped as Device, Credentials, General, Control, Enhancement, Network & access, Cloud (Azure / AWS), and Email & Identity for BEC (MFA reset, mail rule sweep, notify contacts, payment recall, and more) with "Before you do this" hints, in business critical order by default and reorderable. They're shared with Action Items.
 - Hover reminders (the circled **?**) next to the section titles.
 
+**Calls**
+- One **pre-call brief** per client call, drafted from the case: where we are, what's new since the last call, current impact, containment and recovery progress, working assumptions (clearly labelled), asks and approvals needed from the client, and next steps.
+- Each brief is a snapshot you edit (↻ redraft a section when you want fresh data), so older briefs stay a record of what was said. Add attendees, notes and decisions, and mark the call as held.
+- **Copy brief** (internal), **Copy agenda for client** (facts only, no assumptions or internal notes), or save it as a text file.
+
 **Action Items**
 - One list per case for containment, recovery, and general follow-ups, with priority (Critical, High, Medium, Low), owner, due time, status, approval (who, when, how), and done time.
 - Containment actions are shared with the containment strategy: edit one in either place and both update.
@@ -114,7 +119,7 @@ core/
   scripts.js      built-in PowerShell scripts, base64 (generated; see tools/)
   sample.js       fictional sample data
 tabs/
-  client.js  summary.js  storyline.js  tasks.js
+  client.js  summary.js  calls.js  storyline.js  tasks.js
   evidence.js  iocs.js  assets.js  post.js
 samples/          fictional device list CSVs for testing imports
 tools/
@@ -140,6 +145,7 @@ Invoke-TriageCheck.ps1 logging & evidence check script (built into the Client ta
 - [x] Summary and Reports: incident summary, impact assessment, containment strategy
 - [x] Edit case details (status, priority, title, types), with time-stamped status changes
 - [x] Eradication & recovery strategy (suggested from the case, in business critical order)
-- [ ] Pre-call briefs and client report
+- [x] Calls tab: pre-call briefs
+- [ ] Client report
 - [ ] Post-incident tab (lessons learned across cases)
 - [ ] Polish
