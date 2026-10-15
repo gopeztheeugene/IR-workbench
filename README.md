@@ -4,14 +4,14 @@ A personal incident response case workbench that runs entirely in your browser. 
 
 No server, no install, no build step, no internet connection needed.
 
-> **Status: work in progress.** Click **Connect cases folder** in the sidebar to save your cases to a folder on disk (autosaved). Use **Load sample data** to try it out; sample cases are never saved.
+> **Status: work in progress.** Click **Connect cases folder** in the sidebar to save your cases to a folder on disk (autosaved).
 
 ## Getting started
 
 1. Download or clone this repository.
 2. Double-click `index.html`. It opens in **Chrome** or **Edge**, which are the supported browsers.
 3. Click **Connect cases folder** and pick (or create) a folder for your cases, **outside** this project, e.g. `C:\Users\you\IR-Cases`. After a browser restart, click **Reconnect**.
-4. Click **+ New case** to start a case, or **Load sample data** to explore with three fictional cases.
+4. Click **+ New case** to start a case.
 
 ## Features
 
@@ -82,6 +82,11 @@ No server, no install, no build step, no internet connection needed.
 - If a **Tier 0** asset is affected, a warning shows in the case header on every tab, and the containment strategy suggests assuming full domain compromise.
 - Assets are added automatically from evidence when you tick "affected". Host fields across the app can pick from this list.
 
+**Post-incident**
+- Key numbers worked out from the case: dwell time, time to contain, time to close, affected assets, approvals recorded, calls held.
+- Lessons learned (went well, slowed me down, do differently, recommendation for the client), each with a theme and who should act, plus suggestions from the case.
+- **Across all cases:** lessons grouped by theme (e.g. "Visibility / EDR: 6 lessons across 4 cases") and average dwell / containment times, saved to `improvements.json` in your cases folder, so they stay even after a case folder is archived. Tick lessons as addressed, then clear them out.
+
 **Filling in forms**
 - **Highlight empty fields** (Client and Summary and Reports tabs) outlines every empty field in red, like a form's required fields, with a count. It updates as you type.
 
@@ -119,7 +124,7 @@ core/
                   and the containment strategy
   doctext.js      shared formatting for briefs and the insurer summary
   scripts.js      built-in PowerShell scripts, base64 (generated; see tools/)
-  sample.js       fictional sample data
+  sample.js       fictional test cases (not loaded by the app; used by tests)
 tabs/
   client.js  summary.js  calls.js  storyline.js  tasks.js
   evidence.js  iocs.js  assets.js  post.js
@@ -149,5 +154,5 @@ Invoke-TriageCheck.ps1 logging & evidence check script (built into the Client ta
 - [x] Eradication & recovery strategy (suggested from the case, in business critical order)
 - [x] Calls tab: pre-call briefs
 - [x] Insurer / breach coach summary
-- [ ] Post-incident tab (lessons learned across cases)
+- [x] Post-incident tab (lessons learned across cases)
 - [ ] Polish

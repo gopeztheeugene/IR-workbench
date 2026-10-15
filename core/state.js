@@ -41,6 +41,14 @@ const App = {
     editingReportSection: null,
     reportOpen: false,
 
+    // improvements.json as loaded from the cases folder (lessons across
+    // cases, incl. archived ones). null until a folder is connected.
+    improvements: null,
+    // Post-incident tab: suggestions box open? Show addressed lessons in
+    // the across-cases view? (Session only.)
+    postSuggestionsOpen: false,
+    showAddressed: false,
+
     // "Highlight empty fields" switch (Client and Summary and Reports
     // tabs, see core/pickers.js). Remembered in localStorage.
     highlightEmpty: false
@@ -544,6 +552,15 @@ App.caseDefaults = function () {
     calls: [],
     nextCallNumber: 1,
 
+    // Post-incident tab: lessons learned (LL-001...). Each lesson is also
+    // written to improvements.json in the cases folder (see
+    // App.collectImprovements), so lessons build up across cases.
+    post: {
+      lessons: [],
+      nextLessonNumber: 1,
+      dismissedSuggestions: []
+    },
+
     // Summary and Reports tab: incident summary + impact assessment.
     summary: {
       detectedAt: "",          // UTC
@@ -785,6 +802,213 @@ App.addTask = function (caseId, taskData) {
                  closedAt: App.taskIsOpen(result.fields) ? "" : now });
   c.nextTaskNumber = c.nextTaskNumber + 1;
   return { id: id };
+};
+
+// ---------------------------------------------------------------
+// Post-incident tab: lessons learned + improvements.json
+// ---------------------------------------------------------------
+// A lesson: { id: "LL-001", type, theme, actor, text, source ("manual" or
+//   a suggestion key), addressed (true once worked on), addressedAt (UTC),
+//   cleared (true = removed from improvements.json by "Clear addressed";
+//   it stays in the case), createdAt }
+
+App.LESSON_TYPES = [
+  { key: "went-well",   label: "Went well",                        icon: "✅" },
+  { key: "slowed",      label: "Slowed me down",                   icon: "⏳" },
+  { key: "differently", label: "Do differently",                   icon: "🔁" },
+  { key: "client-rec",  label: "Recommendation for the client",    icon: "💡" }
+];
+
+App.LESSON_THEMES = [
+  { key: "visibility",    label: "Visibility / EDR" },
+  { key: "logging",       label: "Logging" },
+  { key: "backups",       label: "Backups" },
+  { key: "identity",      label: "Identity / MFA" },
+  { key: "remote-access", label: "Remote access / VPN" },
+  { key: "tooling",       label: "RMM / tooling" },
+  { key: "process",       label: "Approvals & process" },
+  { key: "communication", label: "Communication" },
+  { key: "environment",   label: "Client environment" },
+  { key: "detection",     label: "Detection" },
+  { key: "other",         label: "Other" }
+];
+
+App.addLesson = function (caseId, data) {
+  const post = App.findCase(caseId).post;
+  const id = "LL-" + String(post.nextLessonNumber).padStart(3, "0");
+  post.lessons.push({
+    id: id,
+    type: data.type || "differently",
+    theme: data.theme || "other",
+    actor: data.actor || "me",
+    text: (data.text || "").trim(),
+    source: data.source || "manual",
+    addressed: false,
+    addressedAt: "",
+    cleared: false,
+    createdAt: App.time.nowUtc()
+  });
+  post.nextLessonNumber = post.nextLessonNumber + 1;
+  return id;
+};
+
+// Change one field. "addressed" also stamps / clears addressedAt.
+App.updateLesson = function (caseId, lessonId, key, value) {
+  const l = App.findCase(caseId).post.lessons.find(function (x) { return x.id === lessonId; });
+  if (!l || !["type", "theme", "actor", "text", "addressed"].includes(key)) {
+    return false;
+  }
+  l[key] = value;
+  if (key === "addressed") {
+    l.addressedAt = value ? App.time.nowUtc() : "";
+  }
+  return true;
+};
+
+App.deleteLesson = function (caseId, lessonId) {
+  const post = App.findCase(caseId).post;
+  post.lessons = post.lessons.filter(function (x) { return x.id !== lessonId; });
+};
+
+App.dismissLessonSuggestion = function (caseId, key) {
+  const post = App.findCase(caseId).post;
+  if (!post.dismissedSuggestions.includes(key)) {
+    post.dismissedSuggestions.push(key);
+  }
+};
+
+// ---- Key numbers (dwell time etc.) ----
+
+// Hours between two UTC texts, or null if either is missing.
+App.hoursBetween = function (fromUtc, toUtc) {
+  if (!fromUtc || !toUtc) {
+    return null;
+  }
+  return (App.time.fromUtcText(toUtc).getTime() - App.time.fromUtcText(fromUtc).getTime()) / 3600000;
+};
+
+// "2 d 4 h", "5 h 10 min", or "—".
+App.formatHours = function (hours) {
+  if (hours === null || hours === undefined || isNaN(hours)) {
+    return "—";
+  }
+  if (hours < 0) {
+    return "check the times (negative)";
+  }
+  if (hours >= 24) {
+    return Math.floor(hours / 24) + " d " + Math.round(hours % 24) + " h";
+  }
+  if (hours >= 1) {
+    return Math.floor(hours) + " h " + Math.round((hours % 1) * 60) + " min";
+  }
+  return Math.round(hours * 60) + " min";
+};
+
+// The case's key numbers, all worked out from the case.
+App.caseMetrics = function (c) {
+  const first = App.sortedStoryline(c).find(function (st) { return st.timestamp !== ""; });
+  const detected = c.summary.detectedAt;
+  const contained = App.statusChangedAt(c, "contained");
+  const closed = c.status === "closed" ? App.statusChangedAt(c, "closed") : "";
+  const containment = c.tasks.filter(function (t) { return t.kind === "containment"; });
+  const doneContainment = containment.filter(function (t) { return t.status === "done"; });
+  return {
+    firstActivity: first ? first.timestamp : "",
+    dwellHours: App.hoursBetween(first ? first.timestamp : "", detected),       // attacker in → detected
+    containHours: App.hoursBetween(detected, contained),                          // detected → contained
+    closeHours: App.hoursBetween(detected, closed),                               // detected → closed
+    affectedAssets: c.assets.filter(function (a) { return a.status !== "clean"; }).length,
+    containmentActions: containment.length,
+    approvalsRecorded: doneContainment.filter(App.taskHasApproval).length,
+    containmentDone: doneContainment.length,
+    callsHeld: c.calls.filter(function (b) { return b.heldAt; }).length
+  };
+};
+
+// ---- improvements.json (lessons across cases) ----
+// App.state.improvements = what was in improvements.json when the cases
+// folder was loaded: { lessons: [...], cases: { "INC-2041": {...} } }.
+// The file is rebuilt on autosave from:
+//   - every case open in the app (its lessons, unless cleared), and
+//   - whatever the file already had for cases that aren't open any more
+//     (archived case folders): their lessons stay, as the long-term record.
+
+// One file entry for a lesson.
+App.improvementEntry = function (c, l) {
+  return {
+    caseId: c.id, client: c.client, caseTitle: c.title, caseTypes: c.types.slice(),
+    lessonId: l.id, type: l.type, theme: l.theme, actor: l.actor, text: l.text,
+    addressed: l.addressed, addressedAt: l.addressedAt, addedAt: l.createdAt
+  };
+};
+
+// Everything improvements.json should hold. includeSamples = true for
+// the screen (sample cases are shown but never written to disk).
+App.collectImprovements = function (includeSamples) {
+  const open = App.state.cases.filter(function (c) { return includeSamples || !c.sample; });
+  const openIds = App.state.cases.map(function (c) { return c.id; });
+  const saved = App.state.improvements || { lessons: [], cases: {} };
+
+  // From the file: cases that aren't open in the app any more.
+  const lessons = saved.lessons.filter(function (x) { return !openIds.includes(x.caseId); });
+  const cases = {};
+  for (const id in saved.cases) {
+    if (!openIds.includes(id)) {
+      cases[id] = saved.cases[id];
+    }
+  }
+  // From the open cases.
+  for (const c of open) {
+    const m = App.caseMetrics(c);
+    cases[c.id] = { client: c.client, title: c.title, types: c.types.slice(), status: c.status,
+                    dwellHours: m.dwellHours, containHours: m.containHours, closeHours: m.closeHours,
+                    sample: Boolean(c.sample) };
+    for (const l of c.post.lessons) {
+      if (!l.cleared && l.text) {
+        lessons.push(App.improvementEntry(c, l));
+      }
+    }
+  }
+  return { lessons: lessons, cases: cases };
+};
+
+// Tick / untick "addressed" on a lesson shown in the across-cases view:
+// in its case if the case is open, otherwise in the file's copy.
+App.setImprovementAddressed = function (caseId, lessonId, on) {
+  const c = App.findCase(caseId);
+  if (c) {
+    App.updateLesson(caseId, lessonId, "addressed", on);
+    return;
+  }
+  const entry = (App.state.improvements || { lessons: [] }).lessons.find(function (x) {
+    return x.caseId === caseId && x.lessonId === lessonId;
+  });
+  if (entry) {
+    entry.addressed = on;
+    entry.addressedAt = on ? App.time.nowUtc() : "";
+  }
+};
+
+// "Clear addressed": remove every addressed lesson from improvements.json.
+// Open cases keep the lesson (marked cleared); closed / archived ones
+// lose it from the file. Returns how many were cleared.
+App.clearAddressedImprovements = function () {
+  let count = 0;
+  for (const c of App.state.cases) {
+    for (const l of c.post.lessons) {
+      if (l.addressed && !l.cleared) {
+        l.cleared = true;
+        count = count + 1;
+      }
+    }
+  }
+  const saved = App.state.improvements;
+  if (saved) {
+    const before = saved.lessons.length;
+    saved.lessons = saved.lessons.filter(function (x) { return !x.addressed; });
+    count = count + (before - saved.lessons.length);
+  }
+  return count;
 };
 
 // ---------------------------------------------------------------
@@ -1519,6 +1743,7 @@ App.upgradeCase = function (c) {
     [c, "iocs", "nextIocNumber"],
     [c, "tasks", "nextTaskNumber"],
     [c, "calls", "nextCallNumber"],
+    [c.post, "lessons", "nextLessonNumber"],
     [c.summary.containment, "assumptions", "nextAssumptionNumber"],
     [c.clientInfo, "people", "nextPersonNumber"],
     [c.clientInfo, "criticalAssets", "nextCriticalNumber"],

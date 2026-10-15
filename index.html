@@ -17,9 +17,6 @@
 
     <button id="new-case-btn" class="btn btn-primary">+ New case</button>
 
-    <!-- Testing helper: adds fake cases (core/sample.js). -->
-    <button id="sample-data-btn" class="btn">Load sample data</button>
-
     <!-- THE time zone for the whole app: every time you see AND every
          time you type is in this zone (saved as UTC behind the scenes).
          Remembered by the browser (localStorage). core/sidebar.js. -->
@@ -624,7 +621,8 @@
   <script src="tabs/iocs.js"></script>
   <script src="tabs/assets.js"></script>
   <script src="tabs/post.js"></script>
-  <script src="core/sample.js"></script>
+  <!-- core/sample.js (fake test cases) is no longer loaded: the app is used
+       for real cases now. Automated tests still load it on their own. -->
   <script src="core/app.js"></script>
 </body>
 </html>

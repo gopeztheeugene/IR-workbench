@@ -376,14 +376,6 @@ dialog .type-option input {
   padding-left: 18px;
 }
 
-/* "Load sample data": a smaller, quieter button */
-#sample-data-btn {
-  width: 100%;
-  margin-bottom: 12px;
-  font-size: 12px;
-  padding: 5px 10px;
-  color: var(--muted);
-}
 
 /* ---------- Tables (Evidence, and later other tabs) ---------- */
 
@@ -1643,6 +1635,94 @@ dialog .chip-input .btn {
 
 .fold-actions {
   margin-bottom: 8px;
+}
+
+/* ---------- Post-incident tab ---------- */
+
+/* Key numbers: a row of tiles (wraps on narrow windows) */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 6px 0 12px;
+}
+
+.metric {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 8px 10px;
+}
+
+.metric-value {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.metric-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* One lesson: type, theme, who acts, text, Addressed, × */
+.lesson-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.lesson-row select,
+.lesson-row input:not([type="checkbox"]) {
+  padding: 5px 7px;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.lesson-row input.grow {
+  flex: 1;
+  min-width: 220px;
+}
+
+/* Addressed lessons fade back */
+.lesson-addressed {
+  opacity: 0.6;
+}
+
+/* Across all cases: one group per theme */
+.across-group {
+  margin-bottom: 10px;
+}
+
+.across-list {
+  list-style: none;
+  margin: 4px 0;
+  padding-left: 4px;
+  font-size: 14px;
+}
+
+/* Tick box, icon and text on one line (the text wraps under itself) */
+.across-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+
+.across-list .check-inline {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.across-list .check-inline input {
+  width: auto;
+  margin: 0;
 }
 
 /* ---------- Calls tab: pre-call briefs ---------- */

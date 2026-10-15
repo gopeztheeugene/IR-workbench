@@ -33,6 +33,7 @@ App.storage = {
   folders: {},             // case ID -> its folder name
   saved: {},               // case ID -> JSON text of the case as last saved / loaded
   lastHistory: {},         // case ID -> time (ms) of the last .history copy
+  savedImprovements: null, // JSON text of improvements.json as last saved / loaded
 
   SCHEMA_VERSION: 4,    // raise when case.json's layout changes (and convert old files)
   HISTORY_KEEP: 20,        // how many .history copies to keep per case
@@ -216,6 +217,22 @@ App.storage.loadAll = async function () {
     st.saved[c.id] = JSON.stringify(c);      // "this is what's on disk"
   }
 
+  // improvements.json (lessons learned across cases), next to the case
+  // folders. Missing = none yet.
+  App.state.improvements = { lessons: [], cases: {} };
+  try {
+    const file = await (await st.dir.getFileHandle("improvements.json")).getFile();
+    const data = JSON.parse(await file.text());
+    if (data.format === "ir-workbench-improvements") {
+      App.state.improvements = { lessons: data.lessons || [], cases: data.cases || {} };
+    }
+  } catch (err) {
+    if (err.name !== "NotFoundError") {
+      console.warn("Could not read improvements.json:", err);
+    }
+  }
+  st.savedImprovements = JSON.stringify(App.collectImprovements(false));
+
   // Keep the selected case if it still exists, else open the first one.
   if (App.state.cases.length > 0 && App.findCase(App.state.selectedCaseId) === null) {
     App.state.selectedCaseId = App.state.cases[0].id;
@@ -261,6 +278,19 @@ App.storage.autosave = async function () {
         st.renderStatus("Saving…");
         await st.saveCase(c, json);
       }
+    }
+    // Lessons across cases: rewrite improvements.json when they changed.
+    const improvements = App.collectImprovements(false);
+    const improvementsJson = JSON.stringify(improvements);
+    if (improvementsJson !== st.savedImprovements) {
+      await st.writeText(st.dir, "improvements.json", JSON.stringify({
+        format: "ir-workbench-improvements",
+        version: 1,
+        savedAt: App.time.nowUtc() + "Z",
+        lessons: improvements.lessons,
+        cases: improvements.cases
+      }, null, 2));
+      st.savedImprovements = improvementsJson;
     }
   } catch (err) {
     st.handleError(err);

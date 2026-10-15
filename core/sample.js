@@ -1,6 +1,6 @@
-// sample.js - fake cases for testing, while everything is in memory.
-// Refreshing the page wipes all data, so one click of
-// "Load sample data" puts test cases back.
+// sample.js - fake cases for testing. NOT loaded by index.html any more
+// (the app is used for real cases); automated tests load it and call
+// App.loadSampleData(). Sample cases are never saved to disk.
 //
 // All names here are made up. Never put real client data in this file:
 // it's part of the code and will end up on GitHub.
@@ -340,6 +340,23 @@ App.loadSampleTasks = function (caseId) {
   }
 };
 
+// Sample status changes (UTC). INC-2041: detected 2026-09-20 06:12,
+// contained that evening. INC-2043: a closed case.
+App.SAMPLE_STATUS_HISTORY = {
+  "INC-2041": [
+    { from: "", to: "open", at: "2026-09-20T06:40:00" },
+    { from: "open", to: "contained", at: "2026-09-20T21:15:00" }
+  ],
+  "INC-2042": [
+    { from: "", to: "open", at: "2026-09-24T02:00:00" }
+  ],
+  "INC-2043": [
+    { from: "", to: "open", at: "2026-09-02T09:00:00" },
+    { from: "open", to: "contained", at: "2026-09-03T01:30:00" },
+    { from: "contained", to: "closed", at: "2026-09-12T08:00:00" }
+  ]
+};
+
 // Sample assets whose evidence is already preserved.
 App.SAMPLE_PRESERVED = {
   "INC-2041": ["ACME-WS114", "ACME-FS01"]
@@ -414,6 +431,12 @@ App.loadSampleData = function () {
       // Mark it as a sample: sample cases are never saved to disk
       // (core/storage.js skips them), so fake data never mixes with real cases.
       App.findCase(c.id).sample = true;
+      // A realistic status history (UTC), so the Post-incident numbers
+      // (time to contain / close) make sense. Without it, the status
+      // would be stamped at the moment "Load sample data" was clicked.
+      if (App.SAMPLE_STATUS_HISTORY[c.id]) {
+        App.findCase(c.id).statusHistory = App.SAMPLE_STATUS_HISTORY[c.id].map(function (h) { return Object.assign({}, h); });
+      }
 
       // Only a NEW case gets its sample evidence, so a 2nd click
       // doesn't add the same evidence twice.
@@ -443,8 +466,12 @@ App.loadSampleData = function () {
   App.render();
 };
 
-// Hook up the button. The page already exists (scripts load at the
-// end of <body>), so we can find the button right away.
-document.getElementById("sample-data-btn").addEventListener("click", function () {
-  App.loadSampleData();
-});
+// Hook up the "Load sample data" button, if the page has one. (It was
+// removed from index.html once the app was used for real cases; tests
+// load this file and call App.loadSampleData() directly.)
+const sampleButton = document.getElementById("sample-data-btn");
+if (sampleButton) {
+  sampleButton.addEventListener("click", function () {
+    App.loadSampleData();
+  });
+}
