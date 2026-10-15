@@ -1720,6 +1720,27 @@ dialog .chip-input .btn {
   margin-bottom: 3px;
 }
 
+/* A big section title inside a fold-away summary line (the insurer
+   summary), kept on one line with its "drafted ..." note */
+.fold > summary h3 {
+  display: inline;
+  margin: 0 8px 0 0;
+}
+
+/* The insurer summary's edit boxes: same dark style as the briefs */
+textarea.brief-edit {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 /* "New in the Storyline", "Functional: High", ... */
 .brief-sub {
   margin: 10px 0 2px;

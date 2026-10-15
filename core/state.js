@@ -36,6 +36,10 @@ const App = {
     // The brief section being edited ("BR-002:since"), or null: that one
     // shows its text box, the rest show the formatted view.
     editingBriefSection: null,
+    // Same for the insurer / breach coach summary ("timeline" or null),
+    // and whether its section is folded open (session only).
+    editingReportSection: null,
+    reportOpen: false,
 
     // "Highlight empty fields" switch (Client and Summary and Reports
     // tabs, see core/pickers.js). Remembered in localStorage.
@@ -576,6 +580,14 @@ App.caseDefaults = function () {
         order: [],                  // custom order of recovery item IDs; [] = BC order
         dismissedSuggestions: [],   // suggestion keys the user dismissed
         waves: {}                   // credential reset waves: { w1: { status, doneAt, notes } }
+      },
+      // Insurer / breach coach summary: a SNAPSHOT document like the
+      // pre-call briefs ("## " sub-headings, "- " bullets), drafted from
+      // the case, then edited. Facts only (no working assumptions).
+      insurerReport: {
+        marking: "PRIVILEGED & CONFIDENTIAL – Prepared at the direction of counsel",
+        sections: {},           // { overview: "text", dates: "text", ... }
+        draftedAt: ""           // UTC, when "Draft from case" was last clicked
       }
     }
   };

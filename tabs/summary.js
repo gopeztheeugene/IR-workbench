@@ -32,6 +32,7 @@ App.tabs.summary = {
       ${tab.impactHtml(caseObj)}
       ${tab.strategyHtml(caseObj)}
       ${tab.recoveryHtml(caseObj)}
+      ${tab.reportHtml(caseObj)}
     `;
     App.time.fillZoneHints();     // "(UTC)" / "(Asia/Manila, UTC+08:00)"
     App.markEmptyFields(panel);   // red outlines if "Highlight empty fields" is on
@@ -1020,6 +1021,291 @@ App.tabs.summary = {
   },
 
   // ---------------------------------------------------------------
+  // 5. Insurer / breach coach summary
+  // ---------------------------------------------------------------
+  // A snapshot document (like the pre-call briefs): "Draft from case"
+  // fills every section, then each is text you edit ("## " sub-headings,
+  // "- " bullets; shown formatted by App.docText). Facts only: working
+  // assumptions are left out, gaps are called blind spots.
+
+  REPORT_SECTIONS: [
+    { key: "overview",  label: "Incident overview" },
+    { key: "dates",     label: "Key dates" },
+    { key: "timeline",  label: "Timeline of attacker activity" },
+    { key: "affected",  label: "Affected systems and accounts" },
+    { key: "exposure",  label: "Data exposure" },
+    { key: "business",  label: "Business impact" },
+    { key: "actions",   label: "Actions taken" },
+    { key: "evidence",  label: "Evidence preserved" },
+    { key: "iocs",      label: "Indicators of compromise" },
+    { key: "status",    label: "Current status and open items" },
+    { key: "parties",   label: "Parties involved" }
+  ],
+
+  REPORT_REMINDERS: [
+    { strong: true, text: "Facts only. Say \"no evidence of X in the logs available\", not \"X didn't happen\". Working assumptions are left out on purpose." },
+    { text: "Call gaps in logs or telemetry blind spots, so nobody reads them as clean results." },
+    { text: "Check the privilege marking with counsel: breach coach / insurer communication usually goes through them." },
+    { text: "Times are shown in the sidebar time zone (with the zone in each time). Insurers often prefer UTC: switch the sidebar zone before copying if so." },
+    { text: "It's a snapshot: ↻ Redraft a section (or Draft from case) when the case has moved on." }
+  ],
+
+  reportHtml: function (c) {
+    const tab = App.tabs.summary;
+    const e = App.escapeHtml;
+    const r = c.summary.insurerReport;
+    const drafted = r.draftedAt
+      ? `<span class="muted small">drafted ${e(App.taskForm.when(r.draftedAt))}</span>`
+      : '<span class="muted small">not drafted yet</span>';
+
+    const cards = tab.REPORT_SECTIONS.map(function (s) {
+      const text = r.sections[s.key] || "";
+      const editing = App.state.editingReportSection === s.key;
+      let body;
+      if (editing) {
+        const lineRows = text.split("\n").reduce(function (sum, line) { return sum + Math.max(1, Math.ceil(line.length / 140)); }, 0);
+        const rows = Math.min(24, Math.max(3, lineRows + 1));
+        // data-field: saved as you type by the normal Summary listener.
+        body = `<textarea class="brief-edit" data-field="insurerReport.sections.${e(s.key)}" rows="${rows}">${e(text)}</textarea>
+                <p class="muted small">"## " starts a sub-heading, "- " a bullet. Saved as you type.</p>`;
+      } else {
+        body = `<div class="brief-view">${App.docText.render(text)}</div>`;
+      }
+      return `
+        <div class="brief-section">
+          <div class="brief-section-head">
+            <span class="brief-title">${e(s.label)}</span>
+            <span class="spacer"></span>
+            <button class="btn btn-small" data-action="report-edit" data-section="${e(s.key)}">${editing ? "Done" : "Edit"}</button>
+            <button class="btn btn-small" data-action="report-redraft" data-section="${e(s.key)}"
+                    title="Replace this section with a fresh draft from the case as it is now">↻ Redraft</button>
+          </div>
+          ${body}
+        </div>`;
+    }).join("");
+
+    const hasDraft = Object.keys(r.sections).length > 0;
+    return `
+      <section class="client-section">
+        <details id="report-box" class="fold"${App.state.reportOpen ? " open" : ""}>
+          <summary><h3 class="section-title">Insurer / breach coach summary</h3> ${drafted}</summary>
+          <div class="fold-body">
+            <div class="sub-row">
+              <span class="sub-label">Marking</span>
+              <input class="grow" data-field="insurerReport.marking" value="${e(r.marking)}"
+                     placeholder="e.g. PRIVILEGED & CONFIDENTIAL – Prepared at the direction of counsel">
+            </div>
+            <div class="add-action-row">
+              <button class="btn btn-small btn-primary" data-action="report-draft"
+                      title="Fill every section from the case as it is now">${hasDraft ? "↻ Redraft all from case" : "Draft from case"}</button>
+              <button class="btn btn-small" data-action="copy-report"${hasDraft ? "" : " disabled"}>Copy summary</button>
+              <button class="btn btn-small" data-action="save-report"${hasDraft ? "" : " disabled"}
+                      title="A .txt file in the case's exports/ folder">Save as text file</button>
+              <span class="spacer"></span>
+              ${App.remindersTipHtml(tab.REPORT_REMINDERS)}
+            </div>
+            ${hasDraft ? cards : '<p class="muted">Click "Draft from case" to fill in the summary from what\'s in the case so far. Then edit any section.</p>'}
+          </div>
+        </details>
+      </section>`;
+  },
+
+  // Draft one section of the summary as text.
+  reportDraft: function (c, key) {
+    const when = App.taskForm.when;
+    const lines = [];
+    const group = function (heading, bullets) {
+      if (bullets.length) {
+        lines.push("## " + heading);
+        bullets.forEach(function (x) { lines.push("- " + x); });
+      }
+    };
+    const unknown = "Not yet determined";
+    const affected = c.assets.filter(function (a) { return a.status !== "clean"; });
+    const story = App.sortedStoryline(c);
+    const tacticIs = function (ids) { return story.filter(function (st) { return ids.includes(st.tactic); }); };
+
+    if (key === "overview") {
+      const s = c.summary;
+      const source = s.detectionSource === "other" ? s.detectionSourceOther : App.labelFor(App.DETECTION_SOURCES, s.detectionSource);
+      const org = c.clientInfo.org || {};
+      const facts = ["Client: " + (c.client || unknown) + (org.industry ? " (" + org.industry + ")" : ""),
+                     "Case: " + c.id + (c.title ? " · " + c.title : ""),
+                     "Incident type: " + (c.types.map(function (k) { return App.typeLabel(k); }).join(", ") || unknown),
+                     "Current status: " + App.labelFor(App.CASE_STATUSES, c.status),
+                     "Detected: " + (s.detectedAt ? when(s.detectedAt) : unknown) + (source ? " · by " + source : "")];
+      group("Incident", facts);
+      if (s.overview) {
+        lines.push("## Summary");
+        lines.push(s.overview);
+      }
+    }
+
+    if (key === "dates") {
+      const first = story.find(function (st) { return st.timestamp !== ""; });
+      // Just bullets: the section title already says "Key dates".
+      [
+        "First attacker activity observed: " + (first ? when(first.timestamp) + " (" + first.id + ", earliest in the logs available)" : unknown),
+        "Detected: " + (c.summary.detectedAt ? when(c.summary.detectedAt) : unknown),
+        "Incident response engaged (case opened): " + (c.opened || unknown),
+        "Contained: " + (App.statusChangedAt(c, "contained") ? when(App.statusChangedAt(c, "contained")) : unknown),
+        "Closed: " + (c.status === "closed" && App.statusChangedAt(c, "closed") ? when(App.statusChangedAt(c, "closed")) : "Not closed yet")
+      ].forEach(function (x) { lines.push("- " + x); });
+    }
+
+    if (key === "timeline") {
+      const rows = story.map(function (st) {
+        const tactic = st.tactic && st.tactic !== "none" ? " [" + App.labelFor(App.MITRE_TACTICS, st.tactic) + "]" : "";
+        const conf = st.confidence === "low" ? " (low confidence)" : "";
+        return (st.timestamp ? when(st.timestamp) : "Time unknown") + " · " + (st.host ? st.host + ": " : "") +
+               st.what + tactic + conf + " (" + st.id + ")";
+      });
+      rows.forEach(function (x) { lines.push("- " + x); });     // in time order; unknown times last
+      if (rows.length === 0) { lines.push("- No timeline entries recorded yet."); }
+    }
+
+    if (key === "affected") {
+      const describe = function (a) {
+        const extra = [App.assetStatusLabel(a.status)];
+        const tier = App.assetTier(c, a);
+        if (tier) { extra.push(App.labelFor(App.AD_TIERS, tier)); }
+        const match = App.criticalMatch(c, a.name);
+        if (match) { extra.push("business critical " + match.label); }
+        if (App.assetLacksEdr(c, a)) { extra.push("no EDR"); }
+        return a.name + " — " + App.assetTypeLabel(a.type) + " · " + extra.join(" · ");
+      };
+      const isAccount = function (a) { return ["account", "service-account", "mailbox"].includes(a.type); };
+      group("Systems (" + affected.filter(function (a) { return !isAccount(a); }).length + ")",
+            affected.filter(function (a) { return !isAccount(a); }).map(describe));
+      group("Accounts and mailboxes (" + affected.filter(isAccount).length + ")",
+            affected.filter(isAccount).map(describe));
+      if (affected.length === 0) { lines.push("- No affected systems or accounts recorded yet."); }
+    }
+
+    if (key === "exposure") {
+      const imp = c.summary.impact;
+      const info = App.IMPACT.information.filter(function (o) { return imp.information[o.key]; })
+        .map(function (o) { return o.label; }).join(", ") || unknown;
+      lines.push("## Information impact: " + info);
+      if (imp.informationNotes) { lines.push("- " + imp.informationNotes); }
+      const exfil = tacticIs(["TA0010"]);
+      group("Exfiltration", exfil.length
+        ? exfil.map(function (st) { return (st.timestamp ? when(st.timestamp) + " · " : "") + st.what + " (" + st.id + ")"; })
+        : ["No evidence of exfiltration in the logs available."]);
+      const collection = tacticIs(["TA0009"]);
+      group("Data collection / staging", collection.map(function (st) {
+        return (st.timestamp ? when(st.timestamp) + " · " : "") + st.what + " (" + st.id + ")";
+      }));
+      // Blind spots: what we couldn't see, so absence isn't read as "clean".
+      const gaps = [];
+      const noEdr = App.devicesWithoutEdr(c);
+      if (noEdr.length) { gaps.push(noEdr.length + " device(s) without EDR: " + noEdr.map(function (d) { return d.name; }).join(", ")); }
+      if (c.clientInfo.devices.rmmCheck === null && !c.clientInfo.devices.allHaveEdr) { gaps.push("EDR coverage across all devices not confirmed"); }
+      group("Visibility gaps (blind spots)", gaps);
+    }
+
+    if (key === "business") {
+      const imp = c.summary.impact;
+      const level = function (k) { return imp[k] ? App.labelFor(App.IMPACT[k], imp[k]) : unknown; };
+      lines.push("## Functional impact: " + level("functional"));
+      lines.push("- " + (imp.functionalNotes || "No details recorded yet."));
+      lines.push("## Recoverability: " + level("recoverability"));
+      lines.push("- " + (imp.recoverabilityNotes || "No details recorded yet."));
+      const b = c.clientInfo.backups;
+      const backup = [];
+      if (b.product) { backup.push("Backup product: " + b.product); }
+      if (b.immutable) { backup.push("Immutable backups: " + (b.immutable === "yes" ? "yes" : "no")); }
+      if (b.allServers) { backup.push("All servers backed up: " + (b.allServers === "yes" ? "yes" : "no" + (b.allServersNotes ? " (" + b.allServersNotes + ")" : ""))); }
+      group("Backups", backup);
+    }
+
+    if (key === "actions") {
+      const doneOf = function (filter) {
+        return c.tasks.filter(function (t) { return t.status === "done" && filter(t); })
+          .map(function (t) { return t.title + (t.doneAt ? " — " + when(t.doneAt) : "") + " (" + t.id + ")"; });
+      };
+      group("Evidence preservation", doneOf(App.isPreservationTask));
+      group("Containment", doneOf(function (t) { return t.kind === "containment"; }));
+      group("Eradication and recovery", doneOf(function (t) { return t.kind === "recovery"; }));
+      group("Credential resets", App.CREDENTIAL_WAVES
+        .filter(function (w) { return App.waveState(c, w.key).status === "done"; })
+        .map(function (w) {
+          const s = App.waveState(c, w.key);
+          return w.title + (s.doneAt ? " — " + when(s.doneAt) : "");
+        }));
+      if (lines.length === 0) { lines.push("- No completed actions recorded yet."); }
+    }
+
+    if (key === "evidence") {
+      group("Evidence items (" + c.evidence.length + ")", c.evidence.map(function (ev) {
+        const parts = [ev.id, App.labelFor(App.EVIDENCE_TYPES, ev.type)];
+        if (ev.source) { parts.push(ev.source); }
+        if (ev.host) { parts.push(ev.host); }
+        if (ev.collectedAt) { parts.push("collected " + when(ev.collectedAt)); }
+        if (ev.hash) { parts.push("SHA-256 " + ev.hash); }
+        return parts.join(" · ");
+      }));
+      if (c.evidence.length === 0) { lines.push("- No evidence recorded yet."); }
+    }
+
+    if (key === "iocs") {
+      // Grouped by type, shown defanged so nothing in the summary is clickable.
+      App.IOC_TYPES.forEach(function (type) {
+        group(type.label, c.iocs.filter(function (i) { return i.type === type.key; })
+          .map(function (i) { return App.ioc.defang(i.value, i.type); }));
+      });
+      if (c.iocs.length === 0) { lines.push("- No indicators recorded yet."); }
+    }
+
+    if (key === "status") {
+      const open = c.tasks.filter(App.taskIsOpen);
+      const count = function (kind) { return open.filter(function (t) { return t.kind === kind; }).length; };
+      group("Status", [
+        "Case: " + App.labelFor(App.CASE_STATUSES, c.status),
+        "Open containment actions: " + count("containment"),
+        "Open eradication / recovery actions: " + count("recovery"),
+        "Credential reset waves done: " + App.CREDENTIAL_WAVES.filter(function (w) { return App.waveState(c, w.key).status === "done"; }).length +
+          " of " + App.CREDENTIAL_WAVES.length
+      ]);
+      group("Key open items", open.sort(App.taskForm.comparator(c)).slice(0, 8).map(function (t) {
+        return t.title + " — " + App.labelFor(App.TASK_STATUSES, t.status) + " · " + App.labelFor(App.TASK_OWNERS, t.owner) + " (" + t.id + ")";
+      }));
+    }
+
+    if (key === "parties") {
+      const people = c.clientInfo.people.filter(function (p) { return p.name; });
+      App.PERSON_SIDES.forEach(function (side) {
+        group(side.label, people.filter(function (p) { return p.side === side.key; }).map(function (p) {
+          return p.name + " — " + App.labelFor(App.PERSON_ROLES, p.role) + (p.company ? " · " + p.company : "");
+        }));
+      });
+      const ins = c.clientInfo.insurance;
+      if (ins.hasCyber === "yes") {
+        group("Cyber insurance", [ins.provider || "Provider not recorded"]);
+      }
+      if (lines.length === 0) { lines.push("- No contacts recorded yet (Client tab, IR team & contacts)."); }
+    }
+
+    return lines.join("\n");
+  },
+
+  // The whole summary as plain text, for an email or a document.
+  reportText: function (c) {
+    const r = c.summary.insurerReport;
+    const lines = [];
+    if (r.marking) { lines.push(r.marking); lines.push(""); }
+    lines.push("INCIDENT SUMMARY – " + c.id + (c.client ? " · " + c.client : ""));
+    lines.push("Prepared " + App.taskForm.when(r.draftedAt || App.time.nowUtc()));
+    App.tabs.summary.REPORT_SECTIONS.forEach(function (s) {
+      lines.push("");
+      lines.push(s.label.toUpperCase());
+      lines.push(App.docText.plain(r.sections[s.key]));
+    });
+    if (r.marking) { lines.push(""); lines.push(r.marking); }
+    return lines.join("\n");
+  },
+
+  // ---------------------------------------------------------------
   // Setup: delegated listeners (like the Client tab)
   // ---------------------------------------------------------------
 
@@ -1038,6 +1324,8 @@ App.tabs.summary = {
         App.state.recoverySuggestionsOpen = event.target.open;
       } else if (event.target.id === "waves-box") {
         App.state.wavesOpen = event.target.open;
+      } else if (event.target.id === "report-box") {
+        App.state.reportOpen = event.target.open;
       }
     }, true);
 
@@ -1131,6 +1419,42 @@ App.tabs.summary = {
       } else if (action === "add-containment") {
         const type = document.getElementById("containment-type").value;
         App.taskForm.open(null, { preset: { kind: "containment", actionType: type, priority: "p1" } });
+      } else if (action === "report-draft") {
+        // Fill every section from the case. Asks first if there's a draft
+        // already (your edits would be replaced).
+        const c = App.getSelectedCase();
+        const r = c.summary.insurerReport;
+        if (Object.keys(r.sections).length === 0 ||
+            confirm("Replace every section with a fresh draft from the case as it is now? Your edits will be lost.")) {
+          for (const s of App.tabs.summary.REPORT_SECTIONS) {
+            r.sections[s.key] = App.tabs.summary.reportDraft(c, s.key);
+          }
+          r.draftedAt = App.time.nowUtc();
+          App.state.editingReportSection = null;
+          App.render();
+        }
+      } else if (action === "report-edit") {
+        const key = button.dataset.section;
+        App.state.editingReportSection = App.state.editingReportSection === key ? null : key;
+        App.render();
+      } else if (action === "report-redraft") {
+        const c = App.getSelectedCase();
+        const key = button.dataset.section;
+        if ((c.summary.insurerReport.sections[key] || "").trim() === "" ||
+            confirm("Replace this section with a fresh draft from the case as it is now? Your edits to it will be lost.")) {
+          App.setSummaryField(caseId, "insurerReport.sections." + key, App.tabs.summary.reportDraft(c, key));
+          App.render();
+        }
+      } else if (action === "copy-report") {
+        App.copyText(App.tabs.summary.reportText(App.getSelectedCase())).then(function (ok) {
+          App.flashButton(button, ok ? "Copied!" : "Copy failed");
+        });
+      } else if (action === "save-report") {
+        const c = App.getSelectedCase();
+        const name = App.safeFileName(c.id) + "_insurer_summary.txt";
+        App.storage.saveExport(c, name, App.tabs.summary.reportText(c)).then(function (result) {
+          App.flashButton(button, result.saved ? "Saved to exports/" : "Downloaded");
+        });
       } else if (action === "copy-waves") {
         // copyText is async (it returns a Promise, like a Python coroutine):
         // .then() runs when it's finished.

@@ -358,57 +358,18 @@ App.tabs.calls = {
     return lines.join("\n");
   },
 
-  // Show a section's text nicely: "## " lines as sub-headings, "- " lines
-  // as bullets (grouped into lists), the rest as paragraphs. Everything is
-  // escaped first, so typed text can't turn into HTML.
+  // Formatting lives in core/doctext.js (App.docText), shared with the
+  // insurer / breach coach summary. These names are kept for this file.
   renderSectionHtml: function (text) {
-    const e = App.escapeHtml;
-    let html = "";
-    let inList = false;
-    const closeList = function () { if (inList) { html += "</ul>"; inList = false; } };
-    for (const raw of String(text || "").split("\n")) {
-      const line = raw.trim();
-      if (line === "") {
-        closeList();
-      } else if (line.startsWith("## ")) {
-        closeList();
-        html += `<div class="brief-sub">${e(line.slice(3))}</div>`;
-      } else if (line.startsWith("- ") || line.startsWith("• ")) {
-        if (!inList) { html += "<ul>"; inList = true; }
-        html += `<li>${App.tabs.calls.lightenIds(e(line.slice(2)))}</li>`;
-      } else {
-        closeList();
-        html += `<p>${App.tabs.calls.lightenIds(e(line))}</p>`;
-      }
-    }
-    closeList();
-    return html || '<p class="muted">Empty. Click Edit to write something, or ↻ Redraft.</p>';
-  },
-
-  // Make IDs (TK-009, ST-005, BR-001, IOC-003...) a lighter colour, so the
-  // words stand out. Works on already-escaped text.
-  lightenIds: function (escaped) {
-    return escaped.replace(/\b(TK|ST|EV|IOC|AS|AN|BR|BC)-\d{2,3}\b/g, '<span class="brief-id">$&</span>');
+    return App.docText.render(text);
   },
 
   // ---------------------------------------------------------------
   // Plain-text copies
   // ---------------------------------------------------------------
 
-  // A section's text for an email / Teams: "## Heading" becomes "Heading:"
-  // and "- item" becomes "  • item".
   plainText: function (text) {
-    if (!text) {
-      return "  • -";
-    }
-    return text.split("\n").map(function (line) {
-      if (line.startsWith("## ")) {
-        const heading = line.slice(3);
-        return heading.includes(":") ? heading : heading + ":";   // no "Functional: High:"
-      }
-      if (line.startsWith("- ")) { return "  • " + line.slice(2); }
-      return line;
-    }).join("\n");
+    return App.docText.plain(text);
   },
 
   // mode "internal": everything. mode "agenda": for the client, facts only

@@ -43,6 +43,7 @@ No server, no install, no build step, no internet connection needed.
   - **Credential reset waves** for a whole-domain reset (Tier 0 accounts → first krbtgt → service accounts → second krbtgt → local accounts → all users, plus communication), with a status per wave and a **Copy plan for sysadmins** / **Save as text file** button to share it.
   - Suggestions from the case (threat hunt, patch initial access, Patient 0, credential reset by tier, rebuild or restore each affected asset, confirm EDR, monitoring, plus cloud and BEC ones). Nothing is added until you click **Add**.
   - Recovery actions from a catalog grouped as Device, Credentials, General, Control, Enhancement, Network & access, Cloud (Azure / AWS), and Email & Identity for BEC (MFA reset, mail rule sweep, notify contacts, payment recall, and more) with "Before you do this" hints, in business critical order by default and reorderable. They're shared with Action Items.
+- **Insurer / breach coach summary:** drafted from the case and then edited, with a privilege marking at the top. It covers the overview, key dates, timeline, affected systems, data exposure (with blind spots called out), business impact, actions taken, evidence preserved (with hashes), IOCs, status and parties involved. Facts only, no assumptions. Copy it or save it as a text file.
 - Hover reminders (the circled **?**) next to the section titles.
 
 **Calls**
@@ -116,6 +117,7 @@ core/
   pickers.js      reusable pick lists for host / account and IOC fields
   taskform.js     the add / edit action item pop-up, shared by Action Items
                   and the containment strategy
+  doctext.js      shared formatting for briefs and the insurer summary
   scripts.js      built-in PowerShell scripts, base64 (generated; see tools/)
   sample.js       fictional sample data
 tabs/
@@ -146,6 +148,6 @@ Invoke-TriageCheck.ps1 logging & evidence check script (built into the Client ta
 - [x] Edit case details (status, priority, title, types), with time-stamped status changes
 - [x] Eradication & recovery strategy (suggested from the case, in business critical order)
 - [x] Calls tab: pre-call briefs
-- [ ] Client report
+- [x] Insurer / breach coach summary
 - [ ] Post-incident tab (lessons learned across cases)
 - [ ] Polish
